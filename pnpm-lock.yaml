@@ -217,14 +217,7 @@ importers:
         specifier: workspace:*
         version: link:../core
 
-  packages/sdk:
-    dependencies:
-      '@web-relay/core':
-        specifier: workspace:*
-        version: link:../core
-      '@web-relay/protocol':
-        specifier: workspace:*
-        version: link:../protocol
+  packages/sdk: {}
 
 packages:
 

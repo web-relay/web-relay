@@ -20,3 +20,6 @@ export function createLauncher<C>(options: { providerId: string; context: () => 
   window.addEventListener('message', onMessage);
   return { registry, dispose: () => window.removeEventListener('message', onMessage) };
 }
+
+export { CapabilityError, Registry } from '@web-relay/core';
+export type { Capability, CapabilityDescriptor, JsonValue, ProviderKind } from '@web-relay/core';

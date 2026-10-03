@@ -5,3 +5,5 @@ dist/
 .DS_Store
 .test/
 test-results/
+.sdk-types/
+artifacts/

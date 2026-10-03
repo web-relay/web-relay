@@ -1,14 +1,35 @@
 {
   "name": "@web-relay/sdk",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./extension": "./src/extension.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./extension": {
+      "types": "./dist/extension.d.ts",
+      "import": "./dist/extension.js"
+    }
   },
-  "dependencies": {
-    "@web-relay/core": "workspace:*",
-    "@web-relay/protocol": "workspace:*"
-  }
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "skills"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/build-sdk.mjs",
+    "prepack": "pnpm build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/web-relay/web-relay.git",
+    "directory": "packages/sdk"
+  },
+  "description": "Provider-owned browser capabilities for PWAs and Chromium extensions"
 }

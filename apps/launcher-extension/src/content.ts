@@ -1,8 +1,9 @@
-import { failure, isPwaOrigin, isRequest, isResponse } from '@web-relay/protocol';
+import { failure, isRequest, isResponse } from '@web-relay/protocol';
 import { CapabilityError } from '@web-relay/core';
 import type { Response } from '@web-relay/protocol';
+import { pwaProvider } from './providers';
 
-if (window === window.top && isPwaOrigin(location.href)) {
+if (window === window.top && pwaProvider(location.href)) {
   const pending = new Map<string, { finish: (response: Response) => void; timer: ReturnType<typeof setTimeout> }>();
   window.addEventListener('message', (event: MessageEvent<unknown>) => {
     if (event.source !== window || event.origin !== location.origin || typeof event.data !== 'object' || event.data === null) return;

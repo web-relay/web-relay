@@ -29,3 +29,8 @@ export function createExtensionProvider(options: {
   chrome.runtime.onMessageExternal.addListener(listener);
   return { dispose: () => chrome.runtime.onMessageExternal.removeListener(listener) };
 }
+
+export { LAUNCHER_ID } from '@web-relay/protocol';
+export type { TabContext } from '@web-relay/protocol';
+export { CapabilityError } from '@web-relay/core';
+export type { JsonValue } from '@web-relay/core';

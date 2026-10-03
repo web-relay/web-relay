@@ -1,8 +1,10 @@
 import { CapabilityError, Registry } from '@web-relay/core';
 import type { CapabilityDescriptor, JsonValue } from '@web-relay/core';
-import { bounded, descriptors, GITHUB_PROVIDER_ID, LLM_PROVIDER_ID, isContext, isPwaOrigin, record, request, unwrap } from '@web-relay/protocol';
+import { bounded, descriptors, isContext, record, request, unwrap } from '@web-relay/protocol';
 import type { TabContext } from '@web-relay/protocol';
 import type { Snapshot } from './model';
+import { extensionProviders, pwaProvider } from './providers';
+import type { ExtensionProvider } from './providers';
 
 async function activeContext(): Promise<TabContext | undefined> {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -49,43 +51,38 @@ async function tabsRegistry(context?: TabContext) {
   }
   return registry;
 }
-function githubContext(context?: TabContext): TabContext | undefined {
-  return context && new URL(context.url).origin === 'https://github.com' ? context : undefined;
-}
 async function callPwa(type: 'discover' | 'execute', context: TabContext, id?: string, input?: string): Promise<JsonValue> {
   const req = request(type, id, context, input);
   return unwrap(await bounded(chrome.tabs.sendMessage(context.tabId, req, { frameId: 0 })), req);
 }
-async function callGithub(type: 'discover' | 'execute', context?: TabContext, id?: string, input?: string): Promise<JsonValue> {
-  const req = request(type, id, githubContext(context), input);
-  return unwrap(await bounded(chrome.runtime.sendMessage(GITHUB_PROVIDER_ID, req)), req);
-}
-async function callLlm(type: 'discover' | 'execute', context?: TabContext, id?: string, input?: string): Promise<JsonValue> {
-  const req = request(type, id, context, input);
-  return unwrap(await bounded(chrome.runtime.sendMessage(LLM_PROVIDER_ID, req)), req);
+async function callExtension(provider: ExtensionProvider, type: 'discover' | 'execute', context?: TabContext, id?: string, input?: string): Promise<JsonValue> {
+  const filteredContext = context && (!provider.contextOrigins || provider.contextOrigins.includes(new URL(context.url).origin)) ? context : undefined;
+  const req = request(type, id, filteredContext, input);
+  return unwrap(await bounded(chrome.runtime.sendMessage(provider.extensionId, req)), req);
 }
 async function discover(sourceContext?: TabContext): Promise<Snapshot> {
   const context = sourceContext ?? await activeContext();
   const capabilities: CapabilityDescriptor[] = [];
   const sources: Snapshot['sources'] = [{ name: 'Browser', status: 'connected', detail: 'Built-in actions' }];
-  if (context && isPwaOrigin(context.url)) {
+  const pwa = context && pwaProvider(context.url);
+  if (context && pwa) {
     try {
-      capabilities.push(...descriptors(await callPwa('discover', context), 'demo-notes', 'pwa'));
-      sources.push({ name: 'Notes PWA', status: 'connected', detail: 'Active local application' });
-    } catch (error) { sources.push({ name: 'Notes PWA', status: 'unavailable', detail: error instanceof Error ? error.message : 'Not connected' }); }
-  } else sources.push({ name: 'Notes PWA', status: 'unavailable', detail: 'Open localhost:4173 to discover app actions' });
-  const settings = await chrome.storage.local.get('githubEnabled');
-  if (settings.githubEnabled === false) sources.push({ name: 'GitHub provider', status: 'disabled', detail: 'Disabled in this launcher' });
-  else {
+      capabilities.push(...descriptors(await callPwa('discover', context), pwa.providerId, 'pwa'));
+      sources.push({ name:pwa.name, status:'connected', detail:'Active configured application' });
+    } catch (error) { sources.push({ name:pwa.name, status:'unavailable', detail:error instanceof Error ? error.message : 'Not connected' }); }
+  } else sources.push({ name:'Notes PWA', status:'unavailable', detail:'Open a configured PWA origin to discover app actions' });
+  const settings = await chrome.storage.local.get(null);
+  const discovered = await Promise.all(extensionProviders.map(async provider => {
+    if (provider.enabledSetting && settings[provider.enabledSetting] === false) {
+      return { commands:[] as CapabilityDescriptor[], source:{ name:provider.name, status:'disabled' as const, detail:'Disabled in this launcher' } };
+    }
     try {
-      capabilities.push(...descriptors(await callGithub('discover', context), 'github', 'extension'));
-      sources.push({ name: 'GitHub provider', status: 'connected', detail: githubContext(context) ? 'Active GitHub context' : 'Global project navigation' });
-    } catch (error) { sources.push({ name: 'GitHub provider', status: 'unavailable', detail: 'Load the paired GitHub extension. ' + (error instanceof Error ? error.message : '') }); }
-  }
-  try {
-    capabilities.push(...descriptors(await callLlm('discover', context), 'llm', 'extension'));
-    sources.push({ name: 'LLM provider', status: 'connected', detail: 'ChatGPT and Gemini page-context chats' });
-  } catch { sources.push({ name: 'LLM provider', status: 'unavailable', detail: 'Load the separate LLM provider extension to connect' }); }
+      return { commands:descriptors(await callExtension(provider, 'discover', context),provider.providerId,'extension'), source:{ name:provider.name,status:'connected' as const,detail:'Paired extension provider' } };
+    } catch (error) {
+      return { commands:[] as CapabilityDescriptor[], source:{ name:provider.name,status:'unavailable' as const,detail:'Load the paired extension. ' + (error instanceof Error ? error.message : '') } };
+    }
+  }));
+  for (const {commands,source} of discovered) { capabilities.push(...commands); sources.push(source); }
   capabilities.push(...browserRegistry(context).list(), ...(await tabsRegistry(context)).list());
   sources.push({ name: 'Tabs', status: 'connected', detail: 'Tabs in this window' });
   return { ...(context ? { context } : {}), capabilities, sources };
@@ -102,12 +99,13 @@ async function execute(command: CapabilityDescriptor, context?: TabContext, inpu
       if (command.providerId === 'tabs') return (await tabsRegistry(context)).execute(command.id, input);
       return browserRegistry(context).execute(command.id, input);
     case 'pwa':
-      if (!context || !isPwaOrigin(context.url)) throw new CapabilityError('UNTRUSTED_ORIGIN', 'PWA origin is not trusted.');
+      if (!context || !pwaProvider(context.url)) throw new CapabilityError('UNTRUSTED_ORIGIN', 'PWA origin is not trusted.');
       return callPwa('execute', context, command.id, input);
-    case 'extension':
-      if (command.providerId === 'llm') return callLlm('execute', context, command.id, input);
-      if (command.providerId === 'github') return callGithub('execute', context, command.id, input);
-      throw new CapabilityError('UNTRUSTED_PROVIDER', 'Unknown extension provider.');
+    case 'extension': {
+      const provider = extensionProviders.find(provider=>provider.providerId === command.providerId);
+      if (!provider) throw new CapabilityError('UNTRUSTED_PROVIDER', 'Unknown extension provider.');
+      return callExtension(provider, 'execute', context, command.id, input);
+    }
   }
 }
 chrome.runtime.onMessage.addListener((value: unknown, sender, sendResponse) => {

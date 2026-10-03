@@ -1,4 +1,5 @@
 import { build } from 'esbuild';
+import './build-sdk.mjs';
 import { cp, mkdir, rm } from 'node:fs/promises';
 const targets = [
   ['demo-pwa', ['main']],

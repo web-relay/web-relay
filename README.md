@@ -2,7 +2,7 @@
 
 A local-first browser capability runtime, demonstrated with a notes PWA, launcher extension, and independent GitHub.com provider extension in a pnpm monorepo.
 
-**Status:** working development showcase, not a published or security-reviewed SDK. Real PWA and cross-extension discovery and invocation are implemented. No backend or GitHub API token is needed.
+**Status:** working development showcase. SDK 0.1.0 builds and packs locally with JavaScript and TypeScript declarations; it is not published on npm. Real PWA and cross-extension discovery and invocation are implemented. No backend or GitHub API token is needed.
 
 [Documentation](https://web-relay.github.io/) · [Showcase guide](https://web-relay.github.io/project/showcase/) · [Decisions](https://web-relay.github.io/project/decisions/)
 
@@ -56,7 +56,7 @@ The monorepo supplies the reference runtime, examples, shared SDK source, and in
 | `packages/protocol` | Versioned wire messages, validators, correlation, timeout helpers, development identities. |
 | `packages/sdk` | PWA integration connecting its registry to the content-script bridge. |
 
-The PWA owns live app state and functions. The launcher receives JSON metadata and sends correlated invocation requests. Functions are never transferred. The contract supports no-input actions and optional `input: "text"` actions with a question of up to 2000 characters. Input schemas, generic provider registration, WebMCP, and workflows remain deferred. Actions may return nothing; the registry normalizes that to null. A missing transport reply after send is an unconfirmed handoff, not proof of success.
+The PWA owns live app state and functions. The launcher receives JSON metadata and sends correlated invocation requests. Functions are never transferred. The contract supports no-input actions and optional `input: "text"` actions with a question of up to 2000 characters. Input schemas, user-facing provider enrollment, WebMCP, and workflows remain deferred. Actions may return nothing; the registry normalizes that to null. A missing transport reply after send is an unconfirmed handoff, not proof of success.
 
 ## Delivery and dismissal
 
@@ -95,3 +95,11 @@ The site remains in https://github.com/web-relay/web-relay.github.io. Update the
 ## License
 
 MIT; see LICENSE.
+
+## Build another integration
+
+Use `pnpm pack:sdk` to produce `artifacts/web-relay-sdk-0.1.0.tgz`, then install that tarball in another project. Do not use workspace aliases in package consumers. See [SDK installation](https://web-relay.github.io/guides/sdk/), [extension providers](https://web-relay.github.io/guides/extensions/), and [PWAs](https://web-relay.github.io/guides/pwa/).
+
+Pair provider IDs/extension IDs and exact PWA origins in `apps/launcher-extension/src/providers.ts`, then rebuild/reload the launcher. New PWA hosts also need manifest host permissions and content-script matches. Pairing is explicit source configuration; SDK installation does not automatically enroll a provider.
+
+Coding agents can use `packages/sdk/skills/web-relay-integration/SKILL.md`, also included in the SDK package. Run `pnpm test:sdk` for an isolated package-consumer check.

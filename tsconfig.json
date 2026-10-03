@@ -14,7 +14,21 @@
     "verbatimModuleSyntax": true,
     "types": [
       "chrome"
-    ]
+    ],
+    "paths": {
+      "@web-relay/core": [
+        "./packages/core/src/index.ts"
+      ],
+      "@web-relay/protocol": [
+        "./packages/protocol/src/index.ts"
+      ],
+      "@web-relay/sdk": [
+        "./packages/sdk/src/index.ts"
+      ],
+      "@web-relay/sdk/extension": [
+        "./packages/sdk/src/extension.ts"
+      ]
+    }
   },
   "include": [
     "apps/**/*.ts",
