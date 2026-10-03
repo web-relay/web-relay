@@ -49,8 +49,13 @@ try {
     ?? await browser.waitForEvent('serviceworker',{predicate:worker=>worker.url().startsWith(`chrome-extension://${id}/`)});
   browser = await launch();
   const provider = await worker(ids[0]);
-  let settings = await browser.newPage();
-  await settings.goto(`chrome-extension://${launcherId}/options.html`);
+  const entry = await browser.newPage();
+  await entry.goto(`chrome-extension://${launcherId}/popup.html`);
+  await entry.getByText('Capability sources',{exact:true}).click();
+  const opened = browser.waitForEvent('page');
+  await entry.getByRole('button',{name:'Manage extension providers'}).click();
+  let settings = await opened;
+  await settings.waitForURL(`chrome-extension://${launcherId}/options.html`);
   await settings.getByText('Ready to pair an extension.',{exact:true}).waitFor();
   const api = (page,message) => page.evaluate(message=>chrome.runtime.sendMessage({channel:'web-relay:panel',version:1,...message}),message);
   const popup = await browser.newPage();
