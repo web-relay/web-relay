@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CapabilityError, Registry } from '../packages/core/src/index';
 import { bounded, descriptors, failure, isPwaOrigin, isRequest, request, success, unwrap } from '../packages/protocol/src/index';
+import { savedProviders } from '../apps/launcher-extension/src/pairing';
 import { githubRegistry, repositoryUrl } from '../apps/webapp-extension/src/github';
 
 test('availability is rechecked at execution; unregister removes a command', async () => {
@@ -94,4 +95,15 @@ test('text inputs are bounded and propagated; no-input actions reject unexpected
 test('missing execution replies are unconfirmed handoffs, not discovery success', () => {
   assert.deepEqual(unwrap(undefined, request('execute','demo.action')), { message: 'Action sent; no result returned.' });
   assert.throws(() => unwrap(undefined, request('discover')), { code: 'INVALID_RESPONSE' });
+});
+
+
+test('saved pairing settings reject reserved identities, duplicates, and invalid permissions', () => {
+  const provider = {providerId:'workspaces',name:'Workspaces',extensionId:'a'.repeat(32),enabled:true,shareTabContext:false};
+  assert.deepEqual(savedProviders([provider]),[provider]);
+  assert.deepEqual(savedProviders(undefined),[]);
+  for (const value of [[provider,provider],[{...provider,providerId:'browser'}],[{...provider,extensionId:'bad'}],[{...provider,shareTabContext:'true'}],[{...provider,name:' '}],{}]) {
+    assert.throws(()=>savedProviders(value),{code:'INVALID_SETTINGS'});
+  }
+  assert.equal(isRequest(request('describe')),true);
 });

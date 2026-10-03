@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Web Relay Launcher",
-  "version": "0.0.1",
-  "description": "Discover local PWA, GitHub provider, and browser actions.",
+  "version": "0.0.2",
+  "description": "Discover browser and PWA actions, and explicitly pair extension providers.",
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -42,5 +42,9 @@
       },
       "description": "Open Web Relay"
     }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
   }
 }

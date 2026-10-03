@@ -2,7 +2,7 @@
 
 A local-first browser capability runtime, demonstrated with a notes PWA, launcher extension, and independent GitHub.com provider extension in a pnpm monorepo.
 
-**Status:** working development showcase. SDK 0.1.1 is published as `@web-relay/sdk` with bundled JavaScript and TypeScript declarations. Real PWA and cross-extension discovery and invocation are implemented. No backend or GitHub API token is needed.
+**Status:** working development showcase. SDK 0.1.3 is published as `@web-relay/sdk` with bundled JavaScript and TypeScript declarations. Real PWA and cross-extension discovery and invocation are implemented. No backend or GitHub API token is needed.
 
 [Documentation](https://web-relay.github.io/) · [Showcase guide](https://web-relay.github.io/project/showcase/) · [Decisions](https://web-relay.github.io/project/decisions/)
 
@@ -43,7 +43,7 @@ Actions are discovered when opening or refreshing the launcher; invocation reche
 
 The sibling `../llm-provider-extension` folder is a real integration outside this example/test workspace. It uses `@web-relay/sdk/extension` to register ChatGPT and Gemini commands with the current page URL as context. Build it separately and load its `dist` folder; this launcher explicitly pairs its development extension ID. No example PWA or GitHub provider is required for it. See that folder's README for setup and delivery behavior.
 
-The monorepo supplies the reference runtime, examples, shared SDK source, and integration test harness. Real providers and PWAs can live independently; the source folder location is not a discovery mechanism. Configurable enrollment remains deferred.
+The monorepo supplies the reference runtime, examples, shared SDK source, and integration test harness. Real providers and PWAs can live independently; the source folder location is not a discovery mechanism. Additional extensions can be explicitly paired in launcher settings.
 
 ## Workspace
 
@@ -56,13 +56,13 @@ The monorepo supplies the reference runtime, examples, shared SDK source, and in
 | `packages/protocol` | Versioned wire messages, validators, correlation, timeout helpers, development identities. |
 | `packages/sdk` | PWA integration connecting its registry to the content-script bridge. |
 
-The PWA owns live app state and functions. The launcher receives JSON metadata and sends correlated invocation requests. Functions are never transferred. The contract supports no-input actions and optional `input: "text"` actions with a question of up to 2000 characters. Input schemas, user-facing provider enrollment, WebMCP, and workflows remain deferred. Actions may return nothing; the registry normalizes that to null. A missing transport reply after send is an unconfirmed handoff, not proof of success.
+The PWA owns live app state and functions. The launcher receives JSON metadata and sends correlated invocation requests. Functions are never transferred. The contract supports no-input actions and optional `input: "text"` actions with a question of up to 2000 characters. Input schemas, PWA enrollment UI, WebMCP, and workflows remain deferred. Actions may return nothing; the registry normalizes that to null. A missing transport reply after send is an unconfirmed handoff, not proof of success.
 
 ## Delivery and dismissal
 
 The injected launcher closes on Escape, clicking its backdrop, loss of window focus, tab switching, or navigation. Closing the launcher does not cancel an action already sent. A returned error is shown if the UI is still present. Optional results are accepted, and an error while refreshing commands after delivery is not displayed as an execution failure.
 
-The Manifest V3 worker is a small event-driven broker for toolbar clicks, browser APIs, and cross-extension requests. It holds no live capability registry. Only the UI tab ID is saved in session storage to dismiss the overlay when switching tabs. We are targeting local unpacked extensions; store packaging and production enrollment are outside this slice.
+The Manifest V3 worker is a small event-driven broker for toolbar clicks, browser APIs, and cross-extension requests. It holds no live capability registry. Session storage holds the UI tab ID and short-lived pairing proposals; approved extension pairings are stored locally. We are targeting local unpacked extensions; store packaging and production enrollment are outside this slice.
 
 Injection works on ordinary HTTP(S) sites. Chromium prevents injection on internal pages such as `chrome://` and some protected sites. The extension shows a badge if injection fails; open a regular website and retry.
 
@@ -100,6 +100,6 @@ MIT; see LICENSE.
 
 Install the published SDK with `pnpm add @web-relay/sdk` or `npm install @web-relay/sdk`. To test a local build, `pnpm pack:sdk` produces an installable tarball under `artifacts/`. Do not use workspace aliases in package consumers. See [SDK installation](https://web-relay.github.io/guides/sdk/), [extension providers](https://web-relay.github.io/guides/extensions/), and [PWAs](https://web-relay.github.io/guides/pwa/).
 
-Pair provider IDs/extension IDs and exact PWA origins in `apps/launcher-extension/src/providers.ts`, then rebuild/reload the launcher. New PWA hosts also need manifest host permissions and content-script matches. Pairing is explicit source configuration; SDK installation does not automatically enroll a provider.
+With launcher 0.0.2, open Capability sources → Manage extension providers, paste an extension ID, check the connection, and approve pairing. Choose whether to share the current tab URL (off by default). Disable/remove saved pairings in the same settings page; no rebuild is needed. SDK 0.1.3 providers can supply a readable `name` and pair before they expose any commands; older providers need one discoverable command. The provider must allow the actual launcher ID. Bundled defaults and exact PWA origins remain in `apps/launcher-extension/src/providers.ts`. New PWA hosts still need manifest access and a rebuild/reload. SDK installation alone does not enroll a provider.
 
 Coding agents can use `packages/sdk/skills/web-relay-integration/SKILL.md`, also included in the SDK package. Run `pnpm test:sdk` for an isolated package-consumer check.

@@ -1,6 +1,6 @@
 # Web Relay SDK
 
-Local capability registration for PWAs and independently installed Chromium provider extensions. Version 0.1.2 provides bundled ESM JavaScript and TypeScript declarations with no runtime npm dependencies.
+Local capability registration for PWAs and independently installed Chromium provider extensions. Version 0.1.3 provides bundled ESM JavaScript and TypeScript declarations with no runtime npm dependencies.
 
 ## Install from npm
 
@@ -11,7 +11,7 @@ pnpm add @web-relay/sdk
 
 Import the PWA API from `@web-relay/sdk` and the extension provider API from `@web-relay/sdk/extension`. See the [extension integration guide](https://web-relay.github.io/guides/extensions/) and [PWA integration guide](https://web-relay.github.io/guides/pwa/) for pairing and setup. Installing the SDK does not automatically enroll a provider; the launcher must explicitly pair provider IDs and PWA origins.
 
-To pin a release, use `pnpm add @web-relay/sdk@0.1.2` (or `npm install @web-relay/sdk@0.1.2`).
+To pin a release, use `pnpm add @web-relay/sdk@0.1.3` (or `npm install @web-relay/sdk@0.1.3`).
 
 ## Install the development package
 
@@ -25,7 +25,7 @@ pnpm pack:sdk
 Then, from your app or extension project:
 
 ```sh
-pnpm add /absolute/path/to/web-relay/artifacts/web-relay-sdk-0.1.2.tgz
+pnpm add /absolute/path/to/web-relay/artifacts/web-relay-sdk-0.1.3.tgz
 ```
 
 Use your normal browser bundler. Do not copy the reference project's TypeScript path aliases into a package consumer. Node.js is needed for tooling, not for an installed extension or running PWA.
@@ -48,6 +48,7 @@ Call `createExtensionProvider` synchronously at service-worker startup. Its `reg
 ```ts
 createExtensionProvider({
   providerId: 'workspaces',
+  name: 'Saved workspaces',
   launcherId: 'your-paired-launcher-extension-id',
   async register(registry) {
     const workspaces = await loadSavedWorkspaces();
@@ -68,7 +69,11 @@ Async registration requires SDK 0.1.2 or later. Build and install the developmen
 
 ## Pairing is explicit
 
-Installing the SDK does not enroll a provider automatically. Configure `apps/launcher-extension/src/providers.ts` in the launcher source, rebuild, and reload it. Extension IDs and PWA origins must match exactly. PWAs at new hosts also require explicit launcher manifest host permissions/content-script matches. Existing app permissions are not silently broadened.
+Installing the SDK does not enroll a provider automatically. With launcher 0.0.2 or later, open **Capability sources → Manage extension providers** (or the extension's Options page), paste the installed provider extension ID, check the connection, and explicitly approve pairing. Approved extension pairings persist in this browser profile without rebuilding the launcher. Current-tab URL sharing is off by default and must be approved separately. Settings can disable or remove saved pairings. The provider must still match the launcher's actual ID in `launcherId` and `externally_connectable.ids`.
+
+SDK 0.1.3 adds optional `name` to `createExtensionProvider` and a `describe` response containing `{providerId, name, protocolVersion: 1}`. The SDK answers after validating the launcher sender, without running registration or actions, so providers can pair even with no commands. Older providers can pair through validated discovery if at least one command is available. Provider names are self-reported; verify the extension ID before approving. Built-in identities and duplicate extension/provider IDs cannot be enrolled again.
+
+`apps/launcher-extension/src/providers.ts` retains bundled defaults and PWA origin configuration. New PWA hosts still require explicit launcher manifest host permissions/content-script matches and a rebuild/reload. This release adds extension enrollment only; no browser permissions are broadened.
 
 - [Extension integration guide](https://web-relay.github.io/guides/extensions/)
 - [PWA integration guide](https://web-relay.github.io/guides/pwa/)

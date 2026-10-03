@@ -1,4 +1,4 @@
-import { Registry } from '@web-relay/core';
+import { CapabilityError, Registry } from '@web-relay/core';
 import { failure, isRequest, success } from '@web-relay/protocol';
 import type { JsonValue } from '@web-relay/core';
 
@@ -10,9 +10,10 @@ export function createLauncher<C>(options: { providerId: string; context: () => 
     if (envelope.source !== 'web-relay:extension' || !isRequest(envelope.message)) return;
     const req = envelope.message;
     options.onInvocation?.();
-    const operation = Promise.resolve().then(() => req.type === 'discover'
-      ? registry.list() as unknown as JsonValue
-      : registry.execute(req.capabilityId!, req.input));
+    const operation = Promise.resolve().then(() => {
+      if (req.type === 'describe') throw new CapabilityError('UNSUPPORTED_REQUEST', 'Extension pairing does not apply to PWAs.');
+      return req.type === 'discover' ? registry.list() as unknown as JsonValue : registry.execute(req.capabilityId!, req.input);
+    });
     operation.then(data => success(req, data), error => failure(req, error)).catch(error => failure(req, error)).then(message => {
       window.postMessage({ source: 'web-relay:pwa', message }, location.origin);
     });

@@ -3,7 +3,7 @@ import './build-sdk.mjs';
 import { cp, mkdir, rm } from 'node:fs/promises';
 const targets = [
   ['demo-pwa', ['main']],
-  ['launcher-extension', ['background', 'popup', 'content', 'overlay']],
+  ['launcher-extension', ['background', 'popup', 'content', 'overlay', 'options']],
   ['webapp-extension', ['background']],
 ];
 for (const [app, entries] of targets) {

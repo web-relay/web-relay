@@ -22,7 +22,7 @@ pwa.registry.register({id:'other.save',title:'Save',when:ctx=>ctx.selected,run:(
 createExtensionProvider({providerId:'other-extension',launcherId:LAUNCHER_ID,register(registry){
  registry.register({id:'other.open',title:'Open',run:context=>({message:context?.url || 'No context'})});
 }});
-createExtensionProvider({providerId:'saved-extension',launcherId:LAUNCHER_ID,async register(registry){
+createExtensionProvider({providerId:'saved-extension',name:'Saved workspaces',launcherId:LAUNCHER_ID,async register(registry){
  await Promise.resolve();
  registry.register({id:'saved.open',title:'Open saved workspace',run:()=>null});
 }});
@@ -40,7 +40,10 @@ const app=createLauncher({providerId:'other-pwa',context:()=>({})});
 app.registry.register({id:'other.save',title:'Save',run:()=>({message:'Saved'})});
 listeners.get('message')({source:window,origin:location.origin,data:{source:'web-relay:extension',message:{channel:'web-relay',version:1,requestId:'one',type:'execute',capabilityId:'other.save'}}});
 await new Promise(resolve=>setTimeout(resolve,0));
-assert.equal(replies[0].message.data.message,'Saved'); app.dispose();
+assert.equal(replies[0].message.data.message,'Saved');
+listeners.get('message')({source:window,origin:location.origin,data:{source:'web-relay:extension',message:{channel:'web-relay',version:1,requestId:'describe-pwa',type:'describe'}}});
+await new Promise(resolve=>setTimeout(resolve,0));
+assert.equal(replies[1].message.error.code,'UNSUPPORTED_REQUEST'); app.dispose();
 let external;
 globalThis.chrome={runtime:{onMessageExternal:{addListener:fn=>external=fn,removeListener:()=>{}}}};
 const provider=createExtensionProvider({providerId:'other-extension',launcherId:LAUNCHER_ID,register(registry){registry.register({id:'other.open',title:'Open',run:()=>({message:'Opened'})});registry.register({id:'other.fail',title:'Fail',run:()=>{throw new CapabilityError('CUSTOM','Actionable error');}});}});
@@ -57,7 +60,7 @@ let release; let loads=0; let calls=0; let failLoad=false;
 let active={id:4,url:'https://other.example/'};
 chrome.tabs={query:async()=>[active]};
 let saved=[{id:'one',name:'Work'}];
-const dynamic=createExtensionProvider({providerId:'saved',launcherId:LAUNCHER_ID,async register(registry){
+const dynamic=createExtensionProvider({providerId:'saved',name:'Saved workspaces',launcherId:LAUNCHER_ID,async register(registry){
  loads++;
  await new Promise(resolve=>release=resolve);
  if(failLoad) throw new CapabilityError('CONFIG_FAILED','Could not read saved workspaces.');
@@ -67,6 +70,9 @@ assert.equal(typeof external,'function');
 assert.equal(external(request,{id:'untrusted'},()=>assert.fail('Untrusted sender replied')),undefined);
 assert.equal(loads,0);
 const invoke=message=>new Promise(resolve=>assert.equal(external({...request,...message},{id:LAUNCHER_ID},resolve),true));
+const described=await invoke({type:'describe'});
+assert.deepEqual(described.data,{providerId:'saved',name:'Saved workspaces',protocolVersion:1});
+assert.equal(loads,0);
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 let replied=false;
 const discovery=invoke({type:'discover'}).then(value=>{replied=true;return value;});

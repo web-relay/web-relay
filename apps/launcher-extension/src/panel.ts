@@ -117,6 +117,10 @@ search.addEventListener('keydown', event => {
   if (event.key === 'Enter' && commands[selected]) { event.preventDefault(); void run(commands[selected]!); }
   if (event.key === 'Escape') close();
 });
+element('#provider-settings').addEventListener('click', async event => {
+  if (!event.isTrusted) return;
+  try { await panel({type:'open-settings'}); close(); } catch (error) { report(error); }
+});
 element('#refresh').addEventListener('click', () => { void refresh(); });
 element<HTMLInputElement>('#github-enabled').addEventListener('click', async event => {
   if (!event.isTrusted) return;

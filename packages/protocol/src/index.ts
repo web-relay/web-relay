@@ -10,7 +10,7 @@ export interface Request {
   channel: typeof CHANNEL;
   version: typeof VERSION;
   requestId: string;
-  type: 'discover' | 'execute';
+  type: 'describe' | 'discover' | 'execute';
   capabilityId?: string;
   input?: string;
   context?: TabContext;
@@ -25,7 +25,7 @@ export function isContext(value: unknown): value is TabContext {
 }
 export function isRequest(value: unknown): value is Request {
   return record(value) && value.channel === CHANNEL && value.version === VERSION && shortString(value.requestId, 80)
-    && (value.type === 'discover' || value.type === 'execute')
+    && (value.type === 'describe' || value.type === 'discover' || value.type === 'execute')
     && (value.input === undefined || shortString(value.input, 2000))
     && (value.context === undefined || isContext(value.context))
     && (value.type !== 'execute' || (shortString(value.capabilityId, 80) && /^[a-z][a-z0-9.-]*$/.test(value.capabilityId)));

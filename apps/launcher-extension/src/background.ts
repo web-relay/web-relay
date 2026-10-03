@@ -3,8 +3,9 @@ import type { CapabilityDescriptor, JsonValue } from '@web-relay/core';
 import { bounded, descriptors, isContext, record, request, unwrap } from '@web-relay/protocol';
 import type { TabContext } from '@web-relay/protocol';
 import type { Snapshot } from './model';
-import { extensionProviders, pwaProvider } from './providers';
+import { pwaProvider } from './providers';
 import type { ExtensionProvider } from './providers';
+import { allExtensionProviders, loadSavedProviders, checkPairing, approvePairing, changePairing } from './pairing';
 
 async function activeContext(): Promise<TabContext | undefined> {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -72,8 +73,8 @@ async function discover(sourceContext?: TabContext): Promise<Snapshot> {
     } catch (error) { sources.push({ name:pwa.name, status:'unavailable', detail:error instanceof Error ? error.message : 'Not connected' }); }
   } else sources.push({ name:'Notes PWA', status:'unavailable', detail:'Open a configured PWA origin to discover app actions' });
   const settings = await chrome.storage.local.get(null);
-  const discovered = await Promise.all(extensionProviders.map(async provider => {
-    if (provider.enabledSetting && settings[provider.enabledSetting] === false) {
+  const discovered = await Promise.all((await allExtensionProviders()).map(async provider => {
+    if (provider.enabled === false || (provider.enabledSetting && settings[provider.enabledSetting] === false)) {
       return { commands:[] as CapabilityDescriptor[], source:{ name:provider.name, status:'disabled' as const, detail:'Disabled in this launcher' } };
     }
     try {
@@ -102,7 +103,7 @@ async function execute(command: CapabilityDescriptor, context?: TabContext, inpu
       if (!context || !pwaProvider(context.url)) throw new CapabilityError('UNTRUSTED_ORIGIN', 'PWA origin is not trusted.');
       return callPwa('execute', context, command.id, input);
     case 'extension': {
-      const provider = extensionProviders.find(provider=>provider.providerId === command.providerId);
+      const provider = (await allExtensionProviders()).find(provider=>provider.providerId === command.providerId && provider.enabled !== false);
       if (!provider) throw new CapabilityError('UNTRUSTED_PROVIDER', 'Unknown extension provider.');
       return callExtension(provider, 'execute', context, command.id, input);
     }
@@ -113,9 +114,21 @@ chrome.runtime.onMessage.addListener((value: unknown, sender, sendResponse) => {
   // cannot access the isolated world's runtime API; page-bridge messages are separate.
   const injected = sender.tab?.id !== undefined && sender.frameId === 0 && /^https?:\/\//.test(sender.url || '');
   const diagnostic = sender.url === chrome.runtime.getURL('popup.html');
-  if (sender.id !== chrome.runtime.id || (!injected && !diagnostic) || !record(value) || value.channel !== 'web-relay:panel' || value.version !== 1) return;
+  const settingsPage = sender.url === chrome.runtime.getURL('options.html');
+  if (sender.id !== chrome.runtime.id || (!injected && !diagnostic && !settingsPage) || !record(value) || value.channel !== 'web-relay:panel' || value.version !== 1) return;
   const sourceContext = injected ? { tabId: sender.tab!.id!, url: sender.url! } : undefined;
   (async () => {
+    if (value.type === 'open-settings') { await chrome.runtime.openOptionsPage(); return null; }
+    if (typeof value.type === 'string' && value.type.startsWith('pairing-')) {
+      if (!settingsPage) throw new CapabilityError('UNTRUSTED_SENDER', 'Pairing can only be changed in extension settings.');
+      const owner = sender.documentId ?? String(sender.tab?.id ?? 'settings');
+      if (value.type === 'pairing-list') return {launcherId:chrome.runtime.id,providers:await loadSavedProviders()};
+      if (value.type === 'pairing-check') return checkPairing(value.extensionId,owner);
+      if (value.type === 'pairing-approve') return approvePairing(value.token,value.shareTabContext,owner);
+      if (value.type === 'pairing-remove') return changePairing(value.extensionId);
+      if (value.type === 'pairing-enable' && typeof value.enabled === 'boolean') return changePairing(value.extensionId,value.enabled);
+      throw new CapabilityError('INVALID_REQUEST', 'Invalid pairing request.');
+    }
     if (value.type === 'list') return discover(sourceContext);
     if (value.type === 'open-handoff' && typeof value.url === 'string' && ['https://chatgpt.com/', 'https://gemini.google.com/app'].includes(value.url)) {
       if (sourceContext) await validateContext(sourceContext);

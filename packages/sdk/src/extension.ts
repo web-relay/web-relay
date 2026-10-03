@@ -1,6 +1,6 @@
 import { CapabilityError, Registry } from '@web-relay/core';
 import type { JsonValue } from '@web-relay/core';
-import { failure, isRequest, success } from '@web-relay/protocol';
+import { failure, isRequest, success, VERSION } from '@web-relay/protocol';
 import type { TabContext } from '@web-relay/protocol';
 
 /**
@@ -9,12 +9,16 @@ import type { TabContext } from '@web-relay/protocol';
  */
 export function createExtensionProvider(options: {
   providerId: string;
+  name?: string;
   launcherId: string;
   register: (registry: Registry<TabContext | undefined>) => void | Promise<void>;
 }) {
   const listener: Parameters<typeof chrome.runtime.onMessageExternal.addListener>[0] = (value: unknown, sender, respond) => {
     if (sender.id !== options.launcherId || !isRequest(value)) return;
     (async () => {
+      if (value.type === 'describe') {
+        return success(value, { providerId: options.providerId, name: options.name ?? options.providerId, protocolVersion: VERSION });
+      }
       const validateContext = async () => {
         if (!value.context) return;
         const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });

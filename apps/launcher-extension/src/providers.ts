@@ -1,12 +1,13 @@
 import { GITHUB_PROVIDER_ID, LLM_PROVIDER_ID } from '@web-relay/protocol';
 
-/** Explicit local pairing. Edit these entries, then rebuild/reload the launcher. */
+/** Bundled defaults. Additional extensions are explicitly paired in launcher settings. */
 export interface ExtensionProvider {
   providerId: string;
   name: string;
   extensionId: string;
   contextOrigins?: string[];
   enabledSetting?: string;
+  enabled?: boolean;
 }
 export const extensionProviders: ExtensionProvider[] = [
   { providerId:'github', name:'GitHub provider', extensionId:GITHUB_PROVIDER_ID, contextOrigins:['https://github.com'], enabledSetting:'githubEnabled' },
