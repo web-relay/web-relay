@@ -11,7 +11,8 @@ run('pnpm',['--filter','@web-relay/sdk','pack','--pack-destination',resolve('art
 const consumer = await mkdtemp(join(tmpdir(),'web-relay-sdk-consumer-'));
 try {
   await writeFile(join(consumer,'package.json'),JSON.stringify({private:true,type:'module',packageManager:'pnpm@12.8.1',dependencies:{'@web-relay/sdk':`file:${resolve('artifacts/web-relay-sdk-0.1.0.tgz')}`}}));
-  run('pnpm',['install','--offline','--ignore-scripts'],consumer);
+  // The test uses the installed tool; offline mode must not download pnpm itself.
+  run('pnpm',['with','current','install','--offline','--ignore-scripts'],consumer);
   await writeFile(join(consumer,'consumer.ts'),`
 import {createLauncher, CapabilityError} from '@web-relay/sdk';
 import {createExtensionProvider, LAUNCHER_ID} from '@web-relay/sdk/extension';
