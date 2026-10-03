@@ -1,0 +1,10 @@
+{
+  "name": "@web-relay/demo-pwa",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@web-relay/core": "workspace:*",
+    "@web-relay/protocol": "workspace:*"
+  }
+}

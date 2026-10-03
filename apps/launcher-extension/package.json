@@ -1,0 +1,10 @@
+{
+  "name": "@web-relay/launcher-extension",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@web-relay/core": "workspace:*",
+    "@web-relay/protocol": "workspace:*"
+  }
+}

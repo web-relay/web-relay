@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Web Relay Launcher (development)",
+  "version": "0.0.1",
+  "description": "The global launcher will discover providers, combine commands, and route invocation requests.",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Web Relay Web App Provider (development)",
+  "version": "0.0.1",
+  "description": "This second extension will expose capabilities for a selected web app. The target app has not been chosen yet.",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
