@@ -35,6 +35,12 @@ Reload both extensions after rebuilding. Pin the launcher in the toolbar. Its bu
 
 Actions are discovered when opening or refreshing the launcher; invocation rechecks provider availability and active-tab context. This is pull discovery, not a continuously pushed registry. Errors and timeouts are shown in the launcher. A timeout does not cancel an already-running action; check the app before retrying.
 
+## Separate LLM provider
+
+The sibling `../llm-provider-extension` folder is a real integration outside this example/test workspace. It uses `@web-relay/sdk/extension` to register ChatGPT and Gemini commands with the current page URL as context. Build it separately and load its `dist` folder; this launcher explicitly pairs its development extension ID. No example PWA or GitHub provider is required for it. See that folder's README for setup and delivery behavior.
+
+The monorepo supplies the reference runtime, examples, shared SDK source, and integration test harness. Real providers and PWAs can live independently; the source folder location is not a discovery mechanism. Published SDK packages and configurable enrollment remain deferred.
+
 ## Workspace
 
 | Directory | Responsibility |

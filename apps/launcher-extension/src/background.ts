@@ -1,6 +1,6 @@
 import { CapabilityError, Registry } from '@web-relay/core';
 import type { CapabilityDescriptor, JsonValue } from '@web-relay/core';
-import { bounded, descriptors, GITHUB_PROVIDER_ID, isContext, isPwaOrigin, record, request, unwrap } from '@web-relay/protocol';
+import { bounded, descriptors, GITHUB_PROVIDER_ID, LLM_PROVIDER_ID, isContext, isPwaOrigin, record, request, unwrap } from '@web-relay/protocol';
 import type { TabContext } from '@web-relay/protocol';
 import type { Snapshot } from './model';
 
@@ -41,6 +41,10 @@ async function callGithub(type: 'discover' | 'execute', context?: TabContext, id
   const req = request(type, id, githubContext(context), input);
   return unwrap(await bounded(chrome.runtime.sendMessage(GITHUB_PROVIDER_ID, req)), req);
 }
+async function callLlm(type: 'discover' | 'execute', context?: TabContext, id?: string, input?: string): Promise<JsonValue> {
+  const req = request(type, id, context, input);
+  return unwrap(await bounded(chrome.runtime.sendMessage(LLM_PROVIDER_ID, req)), req);
+}
 async function discover(sourceContext?: TabContext): Promise<Snapshot> {
   const context = sourceContext ?? await activeContext();
   const capabilities: CapabilityDescriptor[] = [];
@@ -59,6 +63,10 @@ async function discover(sourceContext?: TabContext): Promise<Snapshot> {
       sources.push({ name: 'GitHub provider', status: 'connected', detail: githubContext(context) ? 'Active GitHub context' : 'Global project navigation' });
     } catch (error) { sources.push({ name: 'GitHub provider', status: 'unavailable', detail: 'Load the paired GitHub extension. ' + (error instanceof Error ? error.message : '') }); }
   }
+  try {
+    capabilities.push(...descriptors(await callLlm('discover', context), 'llm', 'extension'));
+    sources.push({ name: 'LLM provider', status: 'connected', detail: 'ChatGPT and Gemini page-context chats' });
+  } catch { sources.push({ name: 'LLM provider', status: 'unavailable', detail: 'Load the separate LLM provider extension to connect' }); }
   capabilities.push(...browserRegistry(context).list());
   return { ...(context ? { context } : {}), capabilities, sources };
 }
@@ -74,7 +82,10 @@ async function execute(command: CapabilityDescriptor, context?: TabContext, inpu
     case 'pwa':
       if (!context || !isPwaOrigin(context.url)) throw new CapabilityError('UNTRUSTED_ORIGIN', 'PWA origin is not trusted.');
       return callPwa('execute', context, command.id, input);
-    case 'extension': return callGithub('execute', context, command.id, input);
+    case 'extension':
+      if (command.providerId === 'llm') return callLlm('execute', context, command.id, input);
+      if (command.providerId === 'github') return callGithub('execute', context, command.id, input);
+      throw new CapabilityError('UNTRUSTED_PROVIDER', 'Unknown extension provider.');
   }
 }
 chrome.runtime.onMessage.addListener((value: unknown, sender, sendResponse) => {

@@ -1,1 +1,14 @@
-{"name":"@web-relay/sdk","version":"0.0.0","private":true,"type":"module","exports":"./src/index.ts","dependencies":{"@web-relay/core":"workspace:*","@web-relay/protocol":"workspace:*"}}
+{
+  "name": "@web-relay/sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./extension": "./src/extension.ts"
+  },
+  "dependencies": {
+    "@web-relay/core": "workspace:*",
+    "@web-relay/protocol": "workspace:*"
+  }
+}

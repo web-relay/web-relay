@@ -1,6 +1,6 @@
 import { CapabilityError } from '@web-relay/core';
 import type { CapabilityDescriptor, JsonValue } from '@web-relay/core';
-export { LAUNCHER_ID, GITHUB_PROVIDER_ID } from './identities';
+export { LAUNCHER_ID, GITHUB_PROVIDER_ID, LLM_PROVIDER_ID } from './identities';
 export const CHANNEL = 'web-relay' as const;
 export const VERSION = 1 as const;
 export const PWA_ORIGINS = ['http://localhost:4173', 'http://127.0.0.1:4173'];
