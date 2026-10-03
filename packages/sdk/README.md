@@ -1,6 +1,17 @@
 # Web Relay SDK
 
-Local capability registration for PWAs and independently installed Chromium provider extensions. Version 0.1.0 provides bundled ESM JavaScript and TypeScript declarations with no runtime npm dependencies. **Not published to npm yet.**
+Local capability registration for PWAs and independently installed Chromium provider extensions. Version 0.1.1 provides bundled ESM JavaScript and TypeScript declarations with no runtime npm dependencies.
+
+## Install from npm
+
+```sh
+pnpm add @web-relay/sdk
+# or: npm install @web-relay/sdk
+```
+
+Import the PWA API from `@web-relay/sdk` and the extension provider API from `@web-relay/sdk/extension`. See the [extension integration guide](https://web-relay.github.io/guides/extensions/) and [PWA integration guide](https://web-relay.github.io/guides/pwa/) for pairing and setup. Installing the SDK does not automatically enroll a provider; the launcher must explicitly pair provider IDs and PWA origins.
+
+To pin a release, use `pnpm add @web-relay/sdk@0.1.1` (or `npm install @web-relay/sdk@0.1.1`).
 
 ## Install the development package
 
@@ -44,4 +55,4 @@ The package includes [a portable integration skill](skills/web-relay-integration
 
 ## Distribution checks
 
-In the reference repository, `pnpm test:sdk` packs the SDK, installs it offline into an isolated project, checks its public TypeScript imports, and executes both PWA and extension transports. The normal runtime build also builds this SDK. CI produces a tarball artifact; this is not an npm release. npm publication requires an authorized account for the `@web-relay` scope and an explicit release step.
+In the reference repository, `pnpm test:sdk` packs the SDK, installs it offline into an isolated project, checks its public TypeScript imports, and executes both PWA and extension transports. The normal runtime build also builds this SDK. Releases are published from GitHub Actions using npm trusted publishing; the workflow runs the full checks before publishing.

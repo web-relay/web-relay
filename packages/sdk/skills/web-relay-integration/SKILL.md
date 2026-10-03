@@ -7,7 +7,7 @@ description: Add or update Web Relay launcher capabilities in an existing Chromi
 
 Keep the user's app in its existing project. The reference monorepo supplies examples, SDK source, and launcher tests; it is not the required home for real integrations.
 
-Determine whether the provider is an extension or a page/PWA. Inspect the installed SDK version, app build, and launcher pairing configuration before changing anything. Current SDK 0.1.0 is distributed as a local/CI tarball, not an npm-published package. Do not invent an npm install command that assumes publication.
+Determine whether the provider is an extension or a page/PWA. Inspect the installed SDK version, app build, and launcher pairing configuration before changing anything. Install the published SDK with `pnpm add @web-relay/sdk` or `npm install @web-relay/sdk`; use `@web-relay/sdk/extension` for Chromium extension providers. Do not assume that installing the package enrolls it with the launcher: pairing remains explicit.
 
 Read only the relevant guide:
 

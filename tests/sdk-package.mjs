@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -8,9 +8,10 @@ function run(command,args,cwd=process.cwd()) {
 }
 await mkdir('artifacts',{recursive:true});
 run('pnpm',['--filter','@web-relay/sdk','pack','--pack-destination',resolve('artifacts')]);
+const {version} = JSON.parse(await readFile('packages/sdk/package.json','utf8'));
 const consumer = await mkdtemp(join(tmpdir(),'web-relay-sdk-consumer-'));
 try {
-  await writeFile(join(consumer,'package.json'),JSON.stringify({private:true,type:'module',packageManager:'pnpm@12.8.1',dependencies:{'@web-relay/sdk':`file:${resolve('artifacts/web-relay-sdk-0.1.0.tgz')}`}}));
+  await writeFile(join(consumer,'package.json'),JSON.stringify({private:true,type:'module',packageManager:'pnpm@12.8.1',dependencies:{'@web-relay/sdk':`file:${resolve(`artifacts/web-relay-sdk-${version}.tgz`)}`}}));
   // The test uses the installed tool; offline mode must not download pnpm itself.
   run('pnpm',['with','current','install','--offline','--ignore-scripts'],consumer);
   await writeFile(join(consumer,'consumer.ts'),`

@@ -2,7 +2,7 @@
 
 A local-first browser capability runtime, demonstrated with a notes PWA, launcher extension, and independent GitHub.com provider extension in a pnpm monorepo.
 
-**Status:** working development showcase. SDK 0.1.0 builds and packs locally with JavaScript and TypeScript declarations; it is not published on npm. Real PWA and cross-extension discovery and invocation are implemented. No backend or GitHub API token is needed.
+**Status:** working development showcase. SDK 0.1.1 is published as `@web-relay/sdk` with bundled JavaScript and TypeScript declarations. Real PWA and cross-extension discovery and invocation are implemented. No backend or GitHub API token is needed.
 
 [Documentation](https://web-relay.github.io/) · [Showcase guide](https://web-relay.github.io/project/showcase/) · [Decisions](https://web-relay.github.io/project/decisions/)
 
@@ -43,7 +43,7 @@ Actions are discovered when opening or refreshing the launcher; invocation reche
 
 The sibling `../llm-provider-extension` folder is a real integration outside this example/test workspace. It uses `@web-relay/sdk/extension` to register ChatGPT and Gemini commands with the current page URL as context. Build it separately and load its `dist` folder; this launcher explicitly pairs its development extension ID. No example PWA or GitHub provider is required for it. See that folder's README for setup and delivery behavior.
 
-The monorepo supplies the reference runtime, examples, shared SDK source, and integration test harness. Real providers and PWAs can live independently; the source folder location is not a discovery mechanism. Published SDK packages and configurable enrollment remain deferred.
+The monorepo supplies the reference runtime, examples, shared SDK source, and integration test harness. Real providers and PWAs can live independently; the source folder location is not a discovery mechanism. Configurable enrollment remains deferred.
 
 ## Workspace
 
@@ -98,7 +98,7 @@ MIT; see LICENSE.
 
 ## Build another integration
 
-Use `pnpm pack:sdk` to produce `artifacts/web-relay-sdk-0.1.0.tgz`, then install that tarball in another project. Do not use workspace aliases in package consumers. See [SDK installation](https://web-relay.github.io/guides/sdk/), [extension providers](https://web-relay.github.io/guides/extensions/), and [PWAs](https://web-relay.github.io/guides/pwa/).
+Install the published SDK with `pnpm add @web-relay/sdk` or `npm install @web-relay/sdk`. To test a local build, `pnpm pack:sdk` produces an installable tarball under `artifacts/`. Do not use workspace aliases in package consumers. See [SDK installation](https://web-relay.github.io/guides/sdk/), [extension providers](https://web-relay.github.io/guides/extensions/), and [PWAs](https://web-relay.github.io/guides/pwa/).
 
 Pair provider IDs/extension IDs and exact PWA origins in `apps/launcher-extension/src/providers.ts`, then rebuild/reload the launcher. New PWA hosts also need manifest host permissions and content-script matches. Pairing is explicit source configuration; SDK installation does not automatically enroll a provider.
 

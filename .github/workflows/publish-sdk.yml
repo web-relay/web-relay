@@ -1,4 +1,4 @@
-name: Stage SDK release
+name: Publish SDK release
 
 on:
   workflow_dispatch:
@@ -25,6 +25,6 @@ jobs:
       - run: pnpm test:sdk
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
-      - name: Stage SDK on npm
+      - name: Publish SDK on npm
         working-directory: packages/sdk
-        run: npm stage publish --access public
+        run: npm publish --access public
