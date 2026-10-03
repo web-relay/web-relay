@@ -1,13 +1,44 @@
 {
   "manifest_version": 3,
-  "name": "Web Relay Launcher (development)",
+  "name": "Web Relay Launcher",
   "version": "0.0.1",
-  "description": "The global launcher will discover providers, combine commands, and route invocation requests.",
+  "description": "Discover local PWA, GitHub provider, and browser actions.",
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "action": {
     "default_popup": "popup.html"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyeDrYIf/QIkPsAgCbsyLzKaZdq2eiHwrwcVcLk8NAerkxs/QIPGQc0AC1lmZr0wiVL60om/A0pUWv9VTGJCcmzyJWl2HJOjP8KO0iQc/V01Y+E7MmPmiwHeCC86c6pHrCMqOhJhZrU28pNJzkVo/Xneh7BdwWHOWa0Di17hcxEG9bbF3xcYYq3da6C6GtfoBtQA7/4n/4h4xvbYqDxSKie0OVzWGR2I3RAT/ndSGosMbkIUY98AxxsLZFq/+QhChrRwpOuCWPUhJnakQ6QzLtZqSrT52jR35THZJ3HdFacrHwg2dT9V0lj4mE89I5hk77szrP+046BQaZnX8mTW7cwIDAQAB",
+  "permissions": [
+    "tabs",
+    "storage",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+Space"
+      },
+      "description": "Open Web Relay"
+    }
   }
 }

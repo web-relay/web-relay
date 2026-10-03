@@ -1,13 +1,22 @@
 {
   "manifest_version": 3,
-  "name": "Web Relay Web App Provider (development)",
+  "name": "Web Relay GitHub Provider",
   "version": "0.0.1",
-  "description": "This second extension will expose capabilities for a selected web app. The target app has not been chosen yet.",
+  "description": "Read-only repository navigation capabilities for GitHub.com.",
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "action": {
     "default_popup": "popup.html"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApE/pRyXU5oouvaClqSFfOLzJG0sH1qEajAWh0JLOt9cXdtwkNXgFhxvOzL6cp8LChb9jFYgQrTSMRC+x8x9606gtcpq8+ZurXBuKe7PcSPMI9IDn3F7amVGqrrFJdxOYZpCR+GaPIYNGILZRPjYncslGCwvr+kZBftaGYPrRi+DULaSYkCNiya/McnyWpPnI+/BSaTQBJVb83CDRP+4O+eWQtGYFbJWSGkdsk9/KnnT3d/HAugljJubyDETWLj0WtVyPu4nVYcP7TOIJiW95/M+YGEXTR7oFinvWwpjAvMA/7AoLQyuWABWYg98X6XyIfDlp2CGHhNvDPLkBHO/KtQIDAQAB",
+  "host_permissions": [
+    "https://github.com/*"
+  ],
+  "externally_connectable": {
+    "ids": [
+      "ofefgdigmcogchpijmpljpkkbkgdcedd"
+    ]
   }
 }

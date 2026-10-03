@@ -13,4 +13,7 @@ jobs:
       - run: npm install --global pnpm@12.8.1
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+      - run: pnpm test
       - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e

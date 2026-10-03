@@ -9,10 +9,14 @@
   "scripts": {
     "check": "tsc --noEmit",
     "build": "node scripts/build.mjs",
-    "dev:pwa": "node scripts/serve.mjs"
+    "dev:pwa": "node scripts/serve.mjs",
+    "test": "node scripts/test.mjs",
+    "test:e2e": "node tests/showcase.mjs"
   },
   "devDependencies": {
-    "typescript": "6.0.3",
-    "esbuild": "0.28.2"
+    "@types/chrome": "0.3.4",
+    "esbuild": "0.28.2",
+    "playwright": "1.63.0",
+    "typescript": "6.0.3"
   }
 }

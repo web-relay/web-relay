@@ -1,5 +1,5 @@
-const CACHE = 'web-relay-demo-v1';
-const SHELL = ['/', '/main.js', '/manifest.webmanifest', '/icon.svg'];
+const CACHE = 'web-relay-demo-v2';
+const SHELL = ['/', '/main.js', '/style.css', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
 });

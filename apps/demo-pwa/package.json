@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@web-relay/core": "workspace:*",
-    "@web-relay/protocol": "workspace:*"
+    "@web-relay/protocol": "workspace:*",
+    "@web-relay/sdk": "workspace:*"
   }
 }
