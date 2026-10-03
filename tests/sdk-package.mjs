@@ -22,6 +22,10 @@ pwa.registry.register({id:'other.save',title:'Save',when:ctx=>ctx.selected,run:(
 createExtensionProvider({providerId:'other-extension',launcherId:LAUNCHER_ID,register(registry){
  registry.register({id:'other.open',title:'Open',run:context=>({message:context?.url || 'No context'})});
 }});
+createExtensionProvider({providerId:'saved-extension',launcherId:LAUNCHER_ID,async register(registry){
+ await Promise.resolve();
+ registry.register({id:'saved.open',title:'Open saved workspace',run:()=>null});
+}});
 void new CapabilityError('CUSTOM','A returned error');
 `);
   run(process.execPath,[resolve('node_modules/typescript/bin/tsc'),'--noEmit','--strict','--skipLibCheck','--module','esnext','--moduleResolution','bundler','--target','es2022',join(consumer,'consumer.ts')],consumer);
@@ -48,6 +52,43 @@ const result=await new Promise(resolve=>external({...request,type:'execute',capa
 assert.equal(result.data.message,'Opened');
 const failure=await new Promise(resolve=>external({...request,type:'execute',capabilityId:'other.fail'},{id:LAUNCHER_ID},resolve));
 assert.equal(failure.error.code,'CUSTOM'); provider.dispose();
+// A deferred configuration load must not delay listener installation or produce partial lists.
+let release; let loads=0; let calls=0; let failLoad=false;
+let active={id:4,url:'https://other.example/'};
+chrome.tabs={query:async()=>[active]};
+let saved=[{id:'one',name:'Work'}];
+const dynamic=createExtensionProvider({providerId:'saved',launcherId:LAUNCHER_ID,async register(registry){
+ loads++;
+ await new Promise(resolve=>release=resolve);
+ if(failLoad) throw new CapabilityError('CONFIG_FAILED','Could not read saved workspaces.');
+ for(const workspace of saved) registry.register({id:'saved.'+workspace.id,title:workspace.name,run:()=>{calls++;return workspace.id;}});
+}});
+assert.equal(typeof external,'function');
+assert.equal(external(request,{id:'untrusted'},()=>assert.fail('Untrusted sender replied')),undefined);
+assert.equal(loads,0);
+const invoke=message=>new Promise(resolve=>assert.equal(external({...request,...message},{id:LAUNCHER_ID},resolve),true));
+const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
+let replied=false;
+const discovery=invoke({type:'discover'}).then(value=>{replied=true;return value;});
+await tick(); assert.equal(loads,1); assert.equal(replied,false);
+release(); assert.equal((await discovery).data[0].title,'Work');
+saved=[];
+const removed=invoke({type:'execute',capabilityId:'saved.one'});
+await tick(); release(); assert.equal((await removed).error.code,'NOT_FOUND'); assert.equal(calls,0);
+saved=[{id:'two',name:'Personal'}];
+const execution=invoke({type:'execute',capabilityId:'saved.two'});
+await tick(); release(); assert.equal((await execution).data,'two'); assert.equal(calls,1);
+failLoad=true;
+const rejected=invoke({type:'discover'});
+await tick(); release(); assert.equal((await rejected).error.code,'CONFIG_FAILED');
+failLoad=false;
+const stale=invoke({type:'execute',capabilityId:'saved.two',context:{tabId:4,url:active.url}});
+await tick(); active={id:4,url:'https://other.example/changed'}; release();
+assert.equal((await stale).error.code,'STALE_CONTEXT'); assert.equal(calls,1);
+const alreadyStale=await invoke({type:'discover',context:{tabId:4,url:'https://other.example/'}});
+assert.equal(alreadyStale.error.code,'STALE_CONTEXT'); assert.equal(loads,5);
+dynamic.dispose();
+console.log('PASS async registration: immediate listener, awaited discovery/execution, fresh saved state, load failures, stale context');
 console.log('PASS isolated packed SDK: imports, declarations, PWA bridge, extension discovery/execution, sender rejection');
 `);
   run(process.execPath,['consumer.mjs'],consumer);

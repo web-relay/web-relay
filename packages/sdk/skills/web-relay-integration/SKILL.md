@@ -21,7 +21,7 @@ Register provider-owned functions with stable namespaced IDs and concise titles.
 
 Extension providers:
 
-- Bundle `createExtensionProvider` into the existing MV3 worker and register its listener at worker startup. Register capabilities synchronously through its callback; callbacks may define asynchronous action functions.
+- Bundle `createExtensionProvider` into the existing MV3 worker and register its listener at worker startup. The `register` callback may return `void` or `Promise<void>` with SDK 0.1.2 or later; load saved configuration inside it, not before attaching the listener. The SDK awaits registration for discovery and execution with a fresh registry per request. Keep registration free of action side effects and within the three-second response timeout. Confirm that older installed packages support async registration before using it; callbacks may define asynchronous action functions.
 - Pair `externally_connectable.ids` and the SDK's `launcherId` with the actual launcher ID. The exported `LAUNCHER_ID` is the local development identity, not universal production enrollment.
 - Add the actual installed provider extension ID and matching provider ID to the launcher's `extensionProviders` configuration. Require explicit user scope for new origins/providers; SDK installation alone does not authorize wider access.
 - The SDK checks active tab ID/URL before invoking. If actions use supplied URL context, request `tabs` and any actual action-specific permissions; keep optional/missing context supported.

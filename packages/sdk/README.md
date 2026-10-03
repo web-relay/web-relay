@@ -1,6 +1,6 @@
 # Web Relay SDK
 
-Local capability registration for PWAs and independently installed Chromium provider extensions. Version 0.1.1 provides bundled ESM JavaScript and TypeScript declarations with no runtime npm dependencies.
+Local capability registration for PWAs and independently installed Chromium provider extensions. Version 0.1.2 provides bundled ESM JavaScript and TypeScript declarations with no runtime npm dependencies.
 
 ## Install from npm
 
@@ -11,7 +11,7 @@ pnpm add @web-relay/sdk
 
 Import the PWA API from `@web-relay/sdk` and the extension provider API from `@web-relay/sdk/extension`. See the [extension integration guide](https://web-relay.github.io/guides/extensions/) and [PWA integration guide](https://web-relay.github.io/guides/pwa/) for pairing and setup. Installing the SDK does not automatically enroll a provider; the launcher must explicitly pair provider IDs and PWA origins.
 
-To pin a release, use `pnpm add @web-relay/sdk@0.1.1` (or `npm install @web-relay/sdk@0.1.1`).
+To pin a release, use `pnpm add @web-relay/sdk@0.1.2` (or `npm install @web-relay/sdk@0.1.2`).
 
 ## Install the development package
 
@@ -25,7 +25,7 @@ pnpm pack:sdk
 Then, from your app or extension project:
 
 ```sh
-pnpm add /absolute/path/to/web-relay/artifacts/web-relay-sdk-0.1.0.tgz
+pnpm add /absolute/path/to/web-relay/artifacts/web-relay-sdk-0.1.2.tgz
 ```
 
 Use your normal browser bundler. Do not copy the reference project's TypeScript path aliases into a package consumer. Node.js is needed for tooling, not for an installed extension or running PWA.
@@ -40,6 +40,31 @@ Use your normal browser bundler. Do not copy the reference project's TypeScript 
 | `TabContext`, `JsonValue`, `CapabilityError` from `@web-relay/sdk/extension` | Context and result types for extension actions. |
 
 Register capabilities with `id`, `title`, optional `description`, optional `input: 'text'`, optional `when(context)`, and `run(context, input)`. Functions remain in the provider. Actions can return JSON or nothing. Text input is nonblank and limited to 2000 characters. Availability is checked again before execution. A timeout does not cancel an already-delivered action.
+
+## Extension registration from storage
+
+Call `createExtensionProvider` synchronously at service-worker startup. Its `register` callback can return `void` or `Promise<void>`; the SDK awaits it on both discovery and execution. This lets saved configuration define commands without delaying listener installation:
+
+```ts
+createExtensionProvider({
+  providerId: 'workspaces',
+  launcherId: 'your-paired-launcher-extension-id',
+  async register(registry) {
+    const workspaces = await loadSavedWorkspaces();
+    for (const workspace of workspaces.filter(item => item.enabled)) {
+      registry.register({
+        id: `workspaces.open-${workspace.id}`,
+        title: `Open ${workspace.name}`,
+        run: () => openWorkspace(workspace.id),
+      });
+    }
+  },
+});
+```
+
+Import `createExtensionProvider` from `@web-relay/sdk/extension`. `loadSavedWorkspaces` and `openWorkspace` are provider-owned functions. Validate saved IDs/titles against the capability rules and expose at most 50 commands. Each request gets a fresh registry; deleted/disabled commands return `NOT_FOUND` on execution. Registration failures use the normal error response. Requests can overlap, so keep request-specific data local. Registration should only load/describe commands, with no action side effects, and finish within the launcher's three-second timeout. Supplied active-tab context is rechecked after registration.
+
+Async registration requires SDK 0.1.2 or later. Build and install the development tarball when testing source changes. See the [saved-configuration guide](https://web-relay.github.io/guides/extensions/#commands-from-saved-configuration). Older installed SDKs may not await the callback.
 
 ## Pairing is explicit
 
