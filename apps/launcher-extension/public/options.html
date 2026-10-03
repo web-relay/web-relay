@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Web Relay · Extension providers</title><link rel="stylesheet" href="popup.css"><link rel="stylesheet" href="options.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Web Relay · Provider settings</title><link rel="stylesheet" href="popup.css"><link rel="stylesheet" href="options.css"></head>
 <body>
-<header><h1>Extension providers</h1><button id="reload" type="button">Refresh</button></header>
+<header><h1>Provider settings</h1><button id="reload" type="button">Refresh</button></header>
 <p>Connect an installed extension to Web Relay. Pairing stays in this browser profile.</p>
 <p class="hint">Launcher extension ID: <code id="launcher-id"></code></p>
 <section aria-labelledby="add-title">
@@ -24,6 +24,21 @@
 </section>
 <p id="status" role="status" aria-live="polite">Loading providers…</p>
 <section aria-labelledby="saved-title"><h2 id="saved-title">Your paired providers</h2><div id="paired"></div></section>
-<p class="hint">GitHub and LLM development providers remain bundled defaults. GitHub can be disabled in the launcher's Capability sources. PWAs still require origin and manifest configuration.</p>
+<section aria-labelledby="pwa-title">
+<h2 id="pwa-title">Pair a web app</h2>
+<p>Open the app in one tab, then enter its full URL. The root URL pairs only the home page; other paths include their subpages. Apps on the same origin can be paired separately.</p>
+<form id="pwa-form">
+<label for="pwa-url">App URL</label><input id="pwa-url" type="url" required placeholder="https://page-apps.github.io/" autocomplete="off">
+<p class="hint">The browser asks for access to the host. Web Relay routes only to approved app origins and paths. This allows discovery and execution of the app's published actions.</p>
+<button type="submit">Check app connection</button>
+</form>
+<div id="pwa-review" hidden><h3>Review app pairing</h3><p id="pwa-identity"></p>
+<p>App identity is self-reported. Verify the origin and path before approving.</p>
+<button id="pwa-approve" type="button">Approve app pairing</button><button id="pwa-cancel" type="button">Cancel app pairing</button></div>
+<p id="pwa-status" role="status" aria-live="polite"></p>
+<h3>Paired web apps</h3><div id="pwa-paired"></div>
+</section>
+<p class="hint">Removing an app pairing stops routing to it. Browser host access remains until revoked in extension site settings; other apps may share that host.</p>
+<p class="hint">GitHub and LLM development providers remain bundled defaults. GitHub can be disabled in the launcher's Capability sources. The local Notes PWA remains a bundled development default.</p>
 <script type="module" src="options.js"></script>
 </body></html>

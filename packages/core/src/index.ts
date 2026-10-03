@@ -22,12 +22,21 @@ export class CapabilityError extends Error {
 /** Functions and live context remain in the owning provider. */
 export class Registry<C> {
   private readonly commands = new Map<string, Capability<C>>();
-  constructor(readonly providerId: string, readonly providerKind: ProviderKind, private readonly context: () => C) {}
+  constructor(readonly providerId: string, readonly providerKind: ProviderKind, private readonly context: () => C) {
+    if (typeof providerId !== 'string' || !/^[a-z][a-z0-9.-]{0,79}$/.test(providerId) || !['pwa','extension','browser'].includes(providerKind)) {
+      throw new CapabilityError('INVALID_PROVIDER', 'Provider ID must start with a lowercase letter and contain at most 80 lowercase letters, digits, dots or hyphens.');
+    }
+  }
   register(command: Capability<C>): () => void {
-    if (!/^[a-z][a-z0-9.-]{0,79}$/.test(command.id) || !command.title.trim() || command.title.length > 120) {
-      throw new CapabilityError('INVALID_CAPABILITY', 'Invalid capability metadata.');
+    if (typeof command.id !== 'string' || !/^[a-z][a-z0-9.-]{0,79}$/.test(command.id)
+      || typeof command.title !== 'string' || !command.title.trim() || command.title.length > 120
+      || (command.description !== undefined && (typeof command.description !== 'string' || !command.description.trim() || command.description.length > 300))
+      || (command.input !== undefined && command.input !== 'text') || typeof command.run !== 'function'
+      || (command.when !== undefined && typeof command.when !== 'function')) {
+      throw new CapabilityError('INVALID_CAPABILITY', 'Use an ID of 1–80 lowercase letters, digits, dots or hyphens, a title of 1–120 characters, a description of 1–300 characters, and input: text or no input.');
     }
     if (this.commands.has(command.id)) throw new CapabilityError('DUPLICATE_ID', `Already registered: ${command.id}`);
+    if (this.providerKind !== 'browser' && this.commands.size >= 50) throw new CapabilityError('CAPABILITY_LIMIT', 'A provider may register at most 50 commands. Unregister a command before adding another.');
     // Copy registration metadata so callers cannot mutate the registry through their object.
     const registered = { ...command };
     this.commands.set(command.id, registered);

@@ -3,7 +3,7 @@ import type { CapabilityDescriptor, JsonValue } from '@web-relay/core';
 import { bounded, descriptors, isContext, record, request, unwrap } from '@web-relay/protocol';
 import type { TabContext } from '@web-relay/protocol';
 import type { Snapshot } from './model';
-import { pwaProvider } from './providers';
+import { matchingPwas, sendPwa, loadSavedPwas, checkPwa, approvePwa, changePwa } from './pwa-pairing';
 import type { ExtensionProvider } from './providers';
 import { allExtensionProviders, loadSavedProviders, checkPairing, approvePairing, changePairing } from './pairing';
 
@@ -52,10 +52,6 @@ async function tabsRegistry(context?: TabContext) {
   }
   return registry;
 }
-async function callPwa(type: 'discover' | 'execute', context: TabContext, id?: string, input?: string): Promise<JsonValue> {
-  const req = request(type, id, context, input);
-  return unwrap(await bounded(chrome.tabs.sendMessage(context.tabId, req, { frameId: 0 })), req);
-}
 async function callExtension(provider: ExtensionProvider, type: 'discover' | 'execute', context?: TabContext, id?: string, input?: string): Promise<JsonValue> {
   const filteredContext = context && (!provider.contextOrigins || provider.contextOrigins.includes(new URL(context.url).origin)) ? context : undefined;
   const req = request(type, id, filteredContext, input);
@@ -65,13 +61,14 @@ async function discover(sourceContext?: TabContext): Promise<Snapshot> {
   const context = sourceContext ?? await activeContext();
   const capabilities: CapabilityDescriptor[] = [];
   const sources: Snapshot['sources'] = [{ name: 'Browser', status: 'connected', detail: 'Built-in actions' }];
-  const pwa = context && pwaProvider(context.url);
-  if (context && pwa) {
+  const pwas = context ? await matchingPwas(context.url) : [];
+  for (const pwa of pwas) {
     try {
-      capabilities.push(...descriptors(await callPwa('discover', context), pwa.providerId, 'pwa'));
-      sources.push({ name:pwa.name, status:'connected', detail:'Active configured application' });
-    } catch (error) { sources.push({ name:pwa.name, status:'unavailable', detail:error instanceof Error ? error.message : 'Not connected' }); }
-  } else sources.push({ name:'Notes PWA', status:'unavailable', detail:'Open a configured PWA origin to discover app actions' });
+      capabilities.push(...descriptors(await sendPwa('discover', context!, pwa.providerId), pwa.providerId, 'pwa'));
+      sources.push({name:pwa.name,status:'connected',detail:`Paired app · ${pwa.origin}${pwa.path}`});
+    } catch (error) { sources.push({name:pwa.name,status:'unavailable',detail:error instanceof Error ? error.message : 'Not connected'}); }
+  }
+  if (!pwas.length) sources.push({name:'Web apps',status:'unavailable',detail:'Pair an app in launcher settings, then open its path'});
   const settings = await chrome.storage.local.get(null);
   const discovered = await Promise.all((await allExtensionProviders()).map(async provider => {
     if (provider.enabled === false || (provider.enabledSetting && settings[provider.enabledSetting] === false)) {
@@ -100,8 +97,8 @@ async function execute(command: CapabilityDescriptor, context?: TabContext, inpu
       if (command.providerId === 'tabs') return (await tabsRegistry(context)).execute(command.id, input);
       return browserRegistry(context).execute(command.id, input);
     case 'pwa':
-      if (!context || !pwaProvider(context.url)) throw new CapabilityError('UNTRUSTED_ORIGIN', 'PWA origin is not trusted.');
-      return callPwa('execute', context, command.id, input);
+      if (!context || !(await matchingPwas(context.url)).some(p=>p.providerId === command.providerId)) throw new CapabilityError('UNTRUSTED_ORIGIN', 'PWA origin is not trusted.');
+      return sendPwa('execute', context, command.providerId, command.id, input);
     case 'extension': {
       const provider = (await allExtensionProviders()).find(provider=>provider.providerId === command.providerId && provider.enabled !== false);
       if (!provider) throw new CapabilityError('UNTRUSTED_PROVIDER', 'Unknown extension provider.');
@@ -119,6 +116,16 @@ chrome.runtime.onMessage.addListener((value: unknown, sender, sendResponse) => {
   const sourceContext = injected ? { tabId: sender.tab!.id!, url: sender.url! } : undefined;
   (async () => {
     if (value.type === 'open-settings') { await chrome.runtime.openOptionsPage(); return null; }
+    if (typeof value.type === 'string' && value.type.startsWith('pwa-')) {
+      if (!settingsPage) throw new CapabilityError('UNTRUSTED_SENDER','PWA pairing can only be changed in extension settings.');
+      const owner = sender.documentId ?? String(sender.tab?.id ?? 'settings');
+      if (value.type === 'pwa-list') return loadSavedPwas();
+      if (value.type === 'pwa-check') return checkPwa(value.url,owner);
+      if (value.type === 'pwa-approve') return approvePwa(value.token,owner);
+      if (value.type === 'pwa-remove') return changePwa(value.providerId);
+      if (value.type === 'pwa-enable' && typeof value.enabled === 'boolean') return changePwa(value.providerId,value.enabled);
+      throw new CapabilityError('INVALID_REQUEST','Invalid app pairing request.');
+    }
     if (typeof value.type === 'string' && value.type.startsWith('pairing-')) {
       if (!settingsPage) throw new CapabilityError('UNTRUSTED_SENDER', 'Pairing can only be changed in extension settings.');
       const owner = sender.documentId ?? String(sender.tab?.id ?? 'settings');

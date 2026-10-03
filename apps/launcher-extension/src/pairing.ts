@@ -74,8 +74,9 @@ async function probe(extensionId: string): Promise<Identity> {
     throw new CapabilityError('PAIRING_FAILED', 'Cannot connect. Load the provider and make sure its launcherId and externally_connectable.ids allow this launcher.');
   }
 }
-function noCollision(providers: SavedProvider[], extensionId: string, providerId: string) {
-  if (reserved.has(providerId) || extensionProviders.some(provider => provider.extensionId === extensionId)
+async function noCollision(providers: SavedProvider[], extensionId: string, providerId: string) {
+  const pwas = (await chrome.storage.local.get('pairedPwaProviders')).pairedPwaProviders;
+  if ((Array.isArray(pwas) && pwas.some(p=>p.providerId === providerId)) || reserved.has(providerId) || extensionProviders.some(provider => provider.extensionId === extensionId)
     || providers.some(provider => provider.providerId === providerId || provider.extensionId === extensionId)) {
     throw new CapabilityError('ALREADY_PAIRED', 'That extension or provider ID is already paired or reserved.');
   }
@@ -83,7 +84,7 @@ function noCollision(providers: SavedProvider[], extensionId: string, providerId
 }
 // Serialize storage changes so overlapping settings pages cannot overwrite approval/removal.
 let changes: Promise<unknown> = Promise.resolve();
-function update<T>(run: () => Promise<T>): Promise<T> {
+export function updatePairings<T>(run: () => Promise<T>): Promise<T> {
   const next = changes.then(run, run);
   changes = next.catch(() => {});
   return next;
@@ -91,13 +92,13 @@ function update<T>(run: () => Promise<T>): Promise<T> {
 export async function checkPairing(extensionId: unknown, owner: string) {
   checkExtensionId(extensionId);
   const info = await probe(extensionId);
-  noCollision(await loadSavedProviders(), extensionId, info.providerId);
+  await noCollision(await loadSavedProviders(), extensionId, info.providerId);
   const proposal = {...info,extensionId,token:crypto.randomUUID(),owner,expires:Date.now()+5*60*1000};
   await chrome.storage.session.set({[PROPOSAL]:proposal});
   return {providerId:info.providerId,name:info.name,protocolVersion:info.protocolVersion,extensionId,token:proposal.token};
 }
 export function approvePairing(token: unknown, shareTabContext: unknown, owner: string) {
-  return update(async () => {
+  return updatePairings(async () => {
     const pending = (await chrome.storage.session.get(PROPOSAL))[PROPOSAL];
     if (!record(pending) || typeof token !== 'string' || pending.token !== token || pending.owner !== owner
       || typeof pending.expires !== 'number' || pending.expires < Date.now() || typeof shareTabContext !== 'boolean') {
@@ -109,7 +110,7 @@ export function approvePairing(token: unknown, shareTabContext: unknown, owner: 
       throw new CapabilityError('IDENTITY_CHANGED', 'Provider identity changed. Check the connection again.');
     }
     const providers = await loadSavedProviders();
-    noCollision(providers,pending.extensionId,info.providerId);
+    await noCollision(providers,pending.extensionId,info.providerId);
     providers.push({providerId:info.providerId,name:info.name,extensionId:pending.extensionId,enabled:true,shareTabContext});
     await chrome.storage.local.set({[KEY]:providers});
     await chrome.storage.session.remove(PROPOSAL);
@@ -117,7 +118,7 @@ export function approvePairing(token: unknown, shareTabContext: unknown, owner: 
   });
 }
 export function changePairing(extensionId: unknown, enabled?: boolean) {
-  return update(async () => {
+  return updatePairings(async () => {
     checkExtensionId(extensionId);
     const providers = await loadSavedProviders();
     const selected = providers.find(provider=>provider.extensionId === extensionId);

@@ -29,7 +29,8 @@ Extension providers:
 PWA providers:
 
 - Create `createLauncher({providerId, context: () => liveAppState})` once per app integration and call `dispose()` during teardown. Do not serialize functions or stale copies of selected state.
-- Pair the provider ID and exact origin in the launcher's `pwaProviders` configuration. Add necessary host permissions and content-script matches to its manifest, then rebuild/reload the launcher. Preserve top-frame and same-origin checks.
+- With development launcher 0.0.3, open Options → Pair a web app. Open exactly one app tab, enter its full URL, approve browser host access, check its identity, and approve pairing. The root path pairs only the home page; other paths include subpages. Saved pairings can be disabled or removed. Published SDK 0.1.3 apps use nonempty discovery; the development PWA SDK adds name/describe and provider-addressed requests for multiple mounted registries. Preserve top-frame, exact-origin, path, and live context checks. Older launchers still need pwaProviders and matching manifest entries followed by rebuild/reload.
+- Register at most 50 commands with titles of at most 120 characters and descriptions of at most 300. dispose() removes the listener without cancelling pending work; request IDs are not deduplicated and navigation timers do not acknowledge delivery.
 - Capability availability comes from the owning registry. Any local palette should use that same registry, including when the browser extension is absent.
 
 Verify discovery and execution with the real launcher and provider loaded in Chromium, including unavailable actions, stale context, returned errors, and provider/bridge trust. Use fixtures for account writes unless a live action is explicitly authorized. Report what was tested, what requires manual setup, and whether the SDK was merely built/packed or actually published.

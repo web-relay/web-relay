@@ -1,3 +1,5 @@
+import { pwaScope, hostPattern } from './pwa-pairing';
+import type { SavedPwa } from './pwa-pairing';
 import { bounded, record } from '@web-relay/protocol';
 import type { SavedProvider } from './pairing';
 
@@ -48,12 +50,13 @@ async function load() {
   const data = await api({type:'pairing-list'}) as {launcherId:string;providers:SavedProvider[]};
   element('launcher-id').textContent = data.launcherId;
   render(data.providers);
+  renderPwas(await api({type:'pwa-list'}) as SavedPwa[]);
 }
 element('pairing-form').addEventListener('submit', event=>{
   event.preventDefault();
   if (!event.isTrusted) return;
   void task(async()=>{
-    cancel(); status.textContent = 'Checking connection…';
+    cancel(); cancelPwa(); status.textContent = 'Checking connection…';
     const data = await api({type:'pairing-check',extensionId:element<HTMLInputElement>('extension-id').value.trim()}) as {token:string;name:string;providerId:string;extensionId:string;protocolVersion:number};
     token = data.token;
     element('review-name').textContent = data.name;
@@ -74,5 +77,55 @@ element('approve').addEventListener('click', event=>{
     status.textContent = 'Provider paired. Refresh the launcher to discover its commands.';
   });
 });
-element('reload').addEventListener('click', event=>{ if (event.isTrusted) void task(async()=>{cancel();await load();status.textContent='Saved providers refreshed.';}); });
+element('reload').addEventListener('click', event=>{ if (event.isTrusted) void task(async()=>{cancel();cancelPwa();await load();status.textContent='Saved providers refreshed.';}); });
+
+
+let pwaToken: string | undefined;
+const pwaStatus = element('pwa-status');
+function cancelPwa() { pwaToken = undefined; element('pwa-review').hidden = true; }
+function renderPwas(providers: SavedPwa[]) {
+  const list = element('pwa-paired'); list.replaceChildren();
+  if (!providers.length) { const empty = document.createElement('p'); empty.textContent = 'No web apps paired.'; list.append(empty); }
+  for (const provider of providers) {
+    const row = document.createElement('div'); row.className = 'paired-provider';
+    const title = document.createElement('h3'); title.textContent = provider.name;
+    const detail = document.createElement('p'); detail.textContent = `${provider.providerId} · ${provider.origin}${provider.path}`;
+    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.textContent = provider.enabled ? 'Disable app' : 'Enable app'; toggle.setAttribute('aria-label',`${toggle.textContent} ${provider.name}`);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Remove app'; remove.setAttribute('aria-label',`Remove app ${provider.name}`);
+    const change = (type: string, enabled?: boolean) => task(async()=>{
+      renderPwas(await api({type,providerId:provider.providerId,enabled}) as SavedPwa[]);
+      pwaStatus.textContent = 'App preference saved. Refresh the launcher to update commands.';
+    });
+    toggle.addEventListener('click',event=>{if(event.isTrusted) void change('pwa-enable',!provider.enabled);});
+    remove.addEventListener('click',event=>{if(event.isTrusted) void change('pwa-remove');});
+    row.append(title,detail,toggle,remove); list.append(row);
+  }
+}
+element('pwa-form').addEventListener('submit',event=>{
+  event.preventDefault(); if (!event.isTrusted) return;
+  void task(async()=>{
+    cancelPwa(); cancel();
+    const url = element<HTMLInputElement>('pwa-url').value.trim();
+    const scope = pwaScope(url);
+    pwaStatus.textContent = 'Requesting site access and checking connection…';
+    if (!await chrome.permissions.request({origins:[hostPattern(scope)]})) {
+      pwaStatus.textContent = 'Site access was declined. The app was not paired.'; return;
+    }
+    const data = await api({type:'pwa-check',url}) as SavedPwa & {token:string};
+    pwaToken = data.token;
+    element('pwa-identity').textContent = `${data.name} · ${data.providerId} · ${data.origin}${data.path}`;
+    element('pwa-review').hidden = false;
+    pwaStatus.textContent = 'Connected. Review the app, then approve pairing.';
+  });
+});
+element('pwa-url').addEventListener('input',cancelPwa);
+element('pwa-cancel').addEventListener('click',cancelPwa);
+element('pwa-approve').addEventListener('click',event=>{
+  if (!event.isTrusted || !pwaToken) return;
+  void task(async()=>{
+    renderPwas(await api({type:'pwa-approve',token:pwaToken}) as SavedPwa[]);
+    cancelPwa(); pwaStatus.textContent = 'App paired. Refresh the launcher to discover its commands.';
+  });
+});
+
 void task(async()=>{await load();status.textContent='Ready to pair an extension.';});

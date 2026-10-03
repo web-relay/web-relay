@@ -1,9 +1,10 @@
 import { failure, isRequest, isResponse } from '@web-relay/protocol';
 import { CapabilityError } from '@web-relay/core';
 import type { Response } from '@web-relay/protocol';
-import { pwaProvider } from './providers';
+const bridge = globalThis as typeof globalThis & { webRelayBridgeInstalled?: boolean };
 
-if (window === window.top && pwaProvider(location.href)) {
+if (window === window.top && !bridge.webRelayBridgeInstalled) {
+  bridge.webRelayBridgeInstalled = true;
   const pending = new Map<string, { finish: (response: Response) => void; timer: ReturnType<typeof setTimeout> }>();
   window.addEventListener('message', (event: MessageEvent<unknown>) => {
     if (event.source !== window || event.origin !== location.origin || typeof event.data !== 'object' || event.data === null) return;

@@ -1,3 +1,4 @@
+import { matchesPwa, pwaScope, savedPwas, hostPattern } from '../apps/launcher-extension/src/pwa-pairing';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CapabilityError, Registry } from '../packages/core/src/index';
@@ -106,4 +107,32 @@ test('saved pairing settings reject reserved identities, duplicates, and invalid
     assert.throws(()=>savedProviders(value),{code:'INVALID_SETTINGS'});
   }
   assert.equal(isRequest(request('describe')),true);
+});
+
+test('registration fails early at the discovery protocol limits', () => {
+  assert.throws(()=>new Registry('Bad ID','pwa',()=>null),{code:'INVALID_PROVIDER'});
+  const registry = new Registry('limits','pwa',()=>null);
+  const command = {id:'limits.action',title:'Action',run:()=>null};
+  for (const metadata of [{description:'x'.repeat(301)},{description:' '},{input:'number'},{title:'x'.repeat(121)}]) {
+    assert.throws(()=>registry.register({...command,...metadata} as never),{code:'INVALID_CAPABILITY'});
+  }
+  for (let i=0;i<50;i++) registry.register({...command,id:`limits.action-${i}`,description:'x'.repeat(300)});
+  assert.equal(descriptors(registry.list(),'limits','pwa').length,50);
+  assert.throws(()=>registry.register(command),{code:'CAPABILITY_LIMIT'});
+});
+
+test('PWA scopes separate the hub from sibling apps and retain exact-origin checks', () => {
+  const hub = pwaScope('https://page-apps.github.io/');
+  const child = pwaScope('https://page-apps.github.io/quick-log/');
+  assert.equal(matchesPwa(hub,'https://page-apps.github.io/'),true);
+  assert.equal(matchesPwa(hub,'https://page-apps.github.io/quick-log/'),false);
+  assert.equal(matchesPwa(child,'https://page-apps.github.io/quick-log/editor'),true);
+  for (const url of ['https://page-apps.github.io/quick-logger/','https://page-apps.github.io.evil/quick-log/','http://page-apps.github.io/quick-log/']) assert.equal(matchesPwa(child,url),false);
+  for (const url of ['https://user:password@example.com/','javascript:alert(1)','https://example.com/?secret=fixture','https://example.com/%2fchild','https://example.com/*']) assert.throws(()=>pwaScope(url),{code:'INVALID_ORIGIN'});
+  assert.equal(hostPattern(pwaScope('http://localhost:5173/')),'http://localhost/*');
+  const saved = {...hub,providerId:'personal-hub',name:'Personal Hub',enabled:true};
+  assert.deepEqual(savedPwas([saved]),[saved]);
+  for (const value of [[saved,saved],[{...saved,providerId:'browser'}],[{...saved,path:'/quick-log'}]]) assert.throws(()=>savedPwas(value));
+  assert.equal(isRequest({...request('discover'),providerId:'personal-hub'}),true);
+  assert.equal(isRequest({...request('discover'),providerId:'INVALID'}),false);
 });
