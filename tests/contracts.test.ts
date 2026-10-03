@@ -67,3 +67,31 @@ test('GitHub capabilities are contextual and navigate only to known GitHub paths
   context = undefined;
   await assert.rejects(registry.execute('github.repo-issues'), { code: 'UNAVAILABLE' });
 });
+
+
+test('actions can return no result; real errors are still preserved', async () => {
+  const registry = new Registry('demo', 'pwa', () => ({}));
+  let delivered = false;
+  registry.register({ id: 'demo.deliver', title: 'Deliver action', run: () => { delivered = true; } });
+  assert.equal(await registry.execute('demo.deliver'), null);
+  assert.equal(delivered, true);
+  registry.register({ id: 'demo.fail', title: 'Fail', run: () => { throw new Error('Provider error'); } });
+  await assert.rejects(registry.execute('demo.fail'), { message: 'Provider error' });
+});
+test('text inputs are bounded and propagated; no-input actions reject unexpected arguments', async () => {
+  const registry = new Registry('demo', 'browser', () => ({}));
+  registry.register({ id: 'demo.question', title: 'Question', input: 'text', run: (_context, input) => input! });
+  assert.equal(await registry.execute('demo.question','What is a capability?'), 'What is a capability?');
+  for (const input of [undefined,'','   ','x'.repeat(2001)]) await assert.rejects(registry.execute('demo.question',input), { code: 'INVALID_INPUT' });
+  const req = request('execute','demo.question',undefined,'Hello');
+  assert.equal(isRequest(req), true);
+  assert.equal(isRequest({ ...req, input: 'x'.repeat(2001) }), false);
+  registry.register({ id: 'demo.empty', title: 'No input', run: () => null });
+  await assert.rejects(registry.execute('demo.empty','Unexpected'), { code: 'INVALID_INPUT' });
+});
+
+
+test('missing execution replies are unconfirmed handoffs, not discovery success', () => {
+  assert.deepEqual(unwrap(undefined, request('execute','demo.action')), { message: 'Action sent; no result returned.' });
+  assert.throws(() => unwrap(undefined, request('discover')), { code: 'INVALID_RESPONSE' });
+});

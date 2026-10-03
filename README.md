@@ -25,12 +25,13 @@ In Chromium, open `chrome://extensions`, enable **Developer mode**, and load the
 - `apps/launcher-extension/dist`
 - `apps/webapp-extension/dist` (GitHub provider)
 
-Reload both extensions after rebuilding. Pin the launcher in the toolbar. Use its toolbar button or `Alt+Shift+Space` (check `chrome://extensions/shortcuts` if the shortcut conflicts).
+Reload both extensions after rebuilding. Pin the launcher in the toolbar. Its button injects a command dialog into the active website; use the button or `Alt+Shift+Space` (check `chrome://extensions/shortcuts` if the shortcut conflicts).
 
 1. On the PWA, use either palette to **Create note**. Select an unpinned note to discover **Pin selected note**; pin it and the command disappears.
 2. On `https://github.com/web-relay/web-relay`, open the launcher for **Open current repository**, **Open repository issues**, and **Open repository pull requests**.
 3. The GitHub provider also exposes **Open Web Relay repository** from any tab. Disable it under **Capability sources** to remove its commands and prevent execution.
-4. Browser commands include **Copy current URL**, **Open new tab**, **Open downloads**, and **Duplicate current tab**. Copy and duplicate require an HTTP(S) tab.
+4. **Prepare question for a new ChatGPT chat** accepts a question, copies it, and opens `chatgpt.com`. Paste and send it there. **Share current link with Gemini** copies the current URL and opens `gemini.google.com/app` for pasting. These are clipboard handoffs, not automatic prompt submission.
+5. Browser commands include **Copy current URL**, **Open new tab**, **Open downloads**, and **Duplicate current tab**. Copy and duplicate require an HTTP(S) tab.
 
 Actions are discovered when opening or refreshing the launcher; invocation rechecks provider availability and active-tab context. This is pull discovery, not a continuously pushed registry. Errors and timeouts are shown in the launcher. A timeout does not cancel an already-running action; check the app before retrying.
 
@@ -45,15 +46,23 @@ Actions are discovered when opening or refreshing the launcher; invocation reche
 | `packages/protocol` | Versioned wire messages, validators, correlation, timeout helpers, development identities. |
 | `packages/sdk` | PWA integration connecting its registry to the content-script bridge. |
 
-The PWA owns live app state and functions. The launcher receives JSON metadata and sends correlated invocation requests. Functions are never transferred. The current contract exposes actions with no input arguments; input schemas, generic provider registration, WebMCP, and workflows remain deferred.
+The PWA owns live app state and functions. The launcher receives JSON metadata and sends correlated invocation requests. Functions are never transferred. The contract supports no-input actions and optional `input: "text"` actions with a question of up to 2000 characters. Input schemas, generic provider registration, WebMCP, and workflows remain deferred. Actions may return nothing; the registry normalizes that to null. A missing transport reply after send is an unconfirmed handoff, not proof of success.
+
+## Delivery and dismissal
+
+The injected launcher closes on Escape, clicking its backdrop, loss of window focus, tab switching, or navigation. Closing the launcher does not cancel an action already sent. A returned error is shown if the UI is still present. Optional results are accepted, and an error while refreshing commands after delivery is not displayed as an execution failure.
+
+The Manifest V3 worker is a small event-driven broker for toolbar clicks, browser APIs, and cross-extension requests. It holds no live capability registry. Only the UI tab ID is saved in session storage to dismiss the overlay when switching tabs. We are targeting local unpacked extensions; store packaging and production enrollment are outside this slice.
+
+Injection works on ordinary HTTP(S) sites. Chromium prevents injection on internal pages such as `chrome://` and some protected sites. The extension shows a badge if injection fails; open a regular website and retry.
 
 ## Trust and permissions
 
 - The demo trusts exactly `http://localhost:4173` and `http://127.0.0.1:4173`. The content-script host patterns cover local hosts; the script validates the exact origin and top frame.
 - Manifest public keys make unpacked extension IDs stable. The launcher explicitly targets the known provider ID, and the provider accepts only the paired launcher ID through `externally_connectable` and a sender check. These are development identities, not protection against someone who controls your unpacked source.
-- The launcher uses `tabs` for active-tab metadata and duplication, `storage` for provider preferences, and `clipboardWrite` for copying URLs in its popup.
+- The launcher uses `activeTab` and `scripting` to inject the UI after a toolbar action or shortcut, without automatic access to every website. It also uses `tabs` for active-tab metadata and duplication, `storage` for provider preferences, and `clipboardWrite` for copying URLs in its popup.
 - The provider requests the GitHub.com host only to inspect repository context. It uses tab navigation, no DOM selectors, downloaded code, account API, or GitHub writes.
-- Only the launcher's own popup document may use its privileged internal API. PWA messaging checks window source, origin, protocol, and request correlation. Execution rejects stale tab snapshots and rechecks availability in the app.
+- The injected UI runs in Chrome’s isolated content-script world and may call the privileged internal API only from a top-frame sender belonging to this extension. Invocation context is bound to its source tab and URL. The extension’s own diagnostic popup document is also permitted. Page scripts cannot call this API through the PWA bridge. PWA messaging checks window source, origin, protocol, and request correlation. Execution rejects stale tab snapshots and rechecks availability in the app.
 
 The SDK assumes code within the trusted PWA origin is trusted. Broader provider enrollment, sensitive-action confirmations, and production permission onboarding remain design work.
 
@@ -65,9 +74,9 @@ pnpm exec playwright install chromium
 pnpm test:e2e              # Build first; loads both real extensions in persistent Chromium
 ```
 
-Set `CHROMIUM_PATH` to reuse an installed full Chromium binary. The integration test starts the PWA server if needed. It opens the real popup document in a tab because headless Chromium does not expose the toolbar popup as a Playwright Page. Extension APIs, service workers, content-script messaging, cross-extension requests, and tab navigation are real.
+Set `CHROMIUM_PATH` to reuse an installed full Chromium binary. The integration tests start the PWA server if needed. The original test covers the diagnostic popup document and extension APIs. The injected-UI suite triggers the actual toolbar action through Chromium’s extension debugging API and tests the dialog directly on the host page, including `activeTab` injection on GitHub. Service workers, content-script messaging, cross-extension requests, clipboard, and navigation are real.
 
-GitHub navigation uses intercepted URL fixtures, so tests do not interact with a GitHub account. Tests also cover stale commands, stale tabs, disabled providers, unsupported protocol versions, note persistence, and the offline PWA. Screenshots are saved in `test-results/`.
+GitHub navigation uses intercepted URL fixtures, so tests do not interact with a GitHub account. Tests also cover stale commands, stale tabs, disabled providers, unsupported protocol versions, note persistence, and the offline PWA. The AI destination pages are also fixtures; tests never submit prompts to an account. Screenshots are saved in `test-results/`.
 
 ## Documentation
 

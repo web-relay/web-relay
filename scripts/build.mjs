@@ -2,7 +2,7 @@ import { build } from 'esbuild';
 import { cp, mkdir, rm } from 'node:fs/promises';
 const targets = [
   ['demo-pwa', ['main']],
-  ['launcher-extension', ['background', 'popup', 'content']],
+  ['launcher-extension', ['background', 'popup', 'content', 'overlay']],
   ['webapp-extension', ['background']],
 ];
 for (const [app, entries] of targets) {
@@ -12,7 +12,8 @@ for (const [app, entries] of targets) {
   await cp(`apps/${app}/public`, output, { recursive: true });
   for (const entry of entries) await build({
     entryPoints: [`apps/${app}/src/${entry}.ts`], outfile: `${output}/${entry}.js`,
-    bundle: true, format: entry === 'content' ? 'iife' : 'esm', platform: 'browser', target: 'es2022',
+    loader: { '.html': 'text', '.css': 'text' },
+    bundle: true, format: ['content','overlay'].includes(entry) ? 'iife' : 'esm', platform: 'browser', target: 'es2022',
   });
   console.log(`Built ${app} → ${output}`);
 }

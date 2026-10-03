@@ -26,21 +26,23 @@ function browserRegistry(context?: TabContext) {
   registry.register({ id: 'browser.duplicate-tab', title: 'Duplicate current tab', when: ctx => !!ctx && /^https?:\/\//.test(ctx.url), run: async ctx => {
     await chrome.tabs.duplicate(ctx!.tabId); return { message: 'Duplicated the current tab.' };
   } });
+  registry.register({ id: 'ai.chatgpt-question', title: 'Prepare question for a new ChatGPT chat', description: 'Copy a question, open ChatGPT, then paste and send', input: 'text', run: (_ctx, input) => ({ clipboard: input!, openUrl: 'https://chatgpt.com/', message: 'Question copied. Paste and send in ChatGPT.' }) });
+  registry.register({ id: 'ai.gemini-link', title: 'Share current link with Gemini', description: 'Copy the page link and open Gemini for you to paste', when: ctx => !!ctx && /^https?:\/\//.test(ctx.url), run: ctx => ({ clipboard: ctx!.url, openUrl: 'https://gemini.google.com/app', message: 'Link copied. Paste it in Gemini.' }) });
   return registry;
 }
 function githubContext(context?: TabContext): TabContext | undefined {
   return context && new URL(context.url).origin === 'https://github.com' ? context : undefined;
 }
-async function callPwa(type: 'discover' | 'execute', context: TabContext, id?: string): Promise<JsonValue> {
-  const req = request(type, id, context);
+async function callPwa(type: 'discover' | 'execute', context: TabContext, id?: string, input?: string): Promise<JsonValue> {
+  const req = request(type, id, context, input);
   return unwrap(await bounded(chrome.tabs.sendMessage(context.tabId, req, { frameId: 0 })), req);
 }
-async function callGithub(type: 'discover' | 'execute', context?: TabContext, id?: string): Promise<JsonValue> {
-  const req = request(type, id, githubContext(context));
+async function callGithub(type: 'discover' | 'execute', context?: TabContext, id?: string, input?: string): Promise<JsonValue> {
+  const req = request(type, id, githubContext(context), input);
   return unwrap(await bounded(chrome.runtime.sendMessage(GITHUB_PROVIDER_ID, req)), req);
 }
-async function discover(): Promise<Snapshot> {
-  const context = await activeContext();
+async function discover(sourceContext?: TabContext): Promise<Snapshot> {
+  const context = sourceContext ?? await activeContext();
   const capabilities: CapabilityDescriptor[] = [];
   const sources: Snapshot['sources'] = [{ name: 'Browser', status: 'connected', detail: 'Built-in actions' }];
   if (context && isPwaOrigin(context.url)) {
@@ -60,7 +62,7 @@ async function discover(): Promise<Snapshot> {
   capabilities.push(...browserRegistry(context).list());
   return { ...(context ? { context } : {}), capabilities, sources };
 }
-async function execute(command: CapabilityDescriptor, context?: TabContext): Promise<JsonValue> {
+async function execute(command: CapabilityDescriptor, context?: TabContext, input?: string): Promise<JsonValue> {
   // Revalidate the active tab and re-discover providers, including the disabled-provider preference.
   if (context) await validateContext(context);
   const fresh = await discover();
@@ -68,26 +70,37 @@ async function execute(command: CapabilityDescriptor, context?: TabContext): Pro
   if (!available) throw new CapabilityError('UNAVAILABLE', 'This capability is no longer available. Refresh the launcher.');
   if (context) await validateContext(context);
   switch (command.providerKind) {
-    case 'browser': return browserRegistry(context).execute(command.id);
+    case 'browser': return browserRegistry(context).execute(command.id, input);
     case 'pwa':
       if (!context || !isPwaOrigin(context.url)) throw new CapabilityError('UNTRUSTED_ORIGIN', 'PWA origin is not trusted.');
-      return callPwa('execute', context, command.id);
-    case 'extension': return callGithub('execute', context, command.id);
+      return callPwa('execute', context, command.id, input);
+    case 'extension': return callGithub('execute', context, command.id, input);
   }
 }
 chrome.runtime.onMessage.addListener((value: unknown, sender, sendResponse) => {
-  // Content scripts and external extensions cannot use the privileged panel API.
-  if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('popup.html') || !record(value) || value.channel !== 'web-relay:panel' || value.version !== 1) return;
+  // Only this extension's own UI scripts can call the panel API. Page scripts
+  // cannot access the isolated world's runtime API; page-bridge messages are separate.
+  const injected = sender.tab?.id !== undefined && sender.frameId === 0 && /^https?:\/\//.test(sender.url || '');
+  const diagnostic = sender.url === chrome.runtime.getURL('popup.html');
+  if (sender.id !== chrome.runtime.id || (!injected && !diagnostic) || !record(value) || value.channel !== 'web-relay:panel' || value.version !== 1) return;
+  const sourceContext = injected ? { tabId: sender.tab!.id!, url: sender.url! } : undefined;
   (async () => {
-    if (value.type === 'list') return discover();
+    if (value.type === 'list') return discover(sourceContext);
+    if (value.type === 'open-handoff' && typeof value.url === 'string' && ['https://chatgpt.com/', 'https://gemini.google.com/app'].includes(value.url)) {
+      if (sourceContext) await validateContext(sourceContext);
+      await chrome.tabs.create({ url: value.url });
+      return null;
+    }
     if (value.type === 'configure' && typeof value.githubEnabled === 'boolean') {
-      await chrome.storage.local.set({ githubEnabled: value.githubEnabled }); return discover();
+      await chrome.storage.local.set({ githubEnabled: value.githubEnabled }); return discover(sourceContext);
     }
     if (value.type === 'execute' && (value.context === undefined || isContext(value.context)) && record(value.command)) {
       const command = value.command;
       const kind = command.providerKind;
       if (typeof command.id !== 'string' || typeof command.providerId !== 'string' || !['browser','pwa','extension'].includes(String(kind))) throw new CapabilityError('INVALID_REQUEST', 'Invalid capability selection.');
-      return execute(command as unknown as CapabilityDescriptor, value.context as TabContext | undefined);
+      if (value.input !== undefined && (typeof value.input !== 'string' || value.input.length > 2000)) throw new CapabilityError('INVALID_INPUT', 'Invalid question input.');
+      if (sourceContext && (!isContext(value.context) || sourceContext.tabId !== value.context.tabId || sourceContext.url !== value.context.url)) throw new CapabilityError('STALE_CONTEXT', 'The source page changed. Reopen the launcher.');
+      return execute(command as unknown as CapabilityDescriptor, value.context as TabContext | undefined, value.input as string | undefined);
     }
     throw new CapabilityError('INVALID_REQUEST', 'Invalid panel request.');
   })().then(data => sendResponse({ ok: true, data }), error => sendResponse({ ok: false, error: {
@@ -95,4 +108,27 @@ chrome.runtime.onMessage.addListener((value: unknown, sender, sendResponse) => {
     message: error instanceof Error ? error.message : 'The request failed.',
   } }));
   return true;
+});
+
+
+/** Stateless event-driven broker: every click injects a fresh UI; no worker-held registry. */
+export async function openLauncher(tabId: number): Promise<void> {
+  try {
+    await chrome.storage.session.set({ launcherTabId: tabId });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['overlay.js'] });
+    await chrome.action.setBadgeText({ tabId, text: '' });
+  } catch {
+    await chrome.action.setBadgeText({ tabId, text: '!' });
+    await chrome.action.setTitle({ tabId, title: 'Web Relay cannot open on this page. Open a regular website and try again.' });
+  }
+}
+chrome.action.onClicked.addListener(tab => { if (tab.id !== undefined) void openLauncher(tab.id); });
+
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  void (async () => {
+    const { launcherTabId } = await chrome.storage.session.get('launcherTabId');
+    if (typeof launcherTabId === 'number' && launcherTabId !== tabId) {
+      try { await chrome.tabs.sendMessage(launcherTabId, { channel: 'web-relay:ui', type: 'dismiss' }, { frameId: 0 }); } catch { /* Navigated or already gone. */ }
+    }
+  })();
 });

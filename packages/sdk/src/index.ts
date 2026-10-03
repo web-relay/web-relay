@@ -12,7 +12,7 @@ export function createLauncher<C>(options: { providerId: string; context: () => 
     options.onInvocation?.();
     const operation = Promise.resolve().then(() => req.type === 'discover'
       ? registry.list() as unknown as JsonValue
-      : registry.execute(req.capabilityId!));
+      : registry.execute(req.capabilityId!, req.input));
     operation.then(data => success(req, data), error => failure(req, error)).catch(error => failure(req, error)).then(message => {
       window.postMessage({ source: 'web-relay:pwa', message }, location.origin);
     });

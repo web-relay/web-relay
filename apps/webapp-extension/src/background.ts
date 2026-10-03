@@ -14,7 +14,7 @@ chrome.runtime.onMessageExternal.addListener((value: unknown, sender, sendRespon
       if (tabId === undefined) await chrome.tabs.create({ url });
       else await chrome.tabs.update(tabId, { url });
     });
-    const data = value.type === 'discover' ? registry.list() as unknown as JsonValue : await registry.execute(value.capabilityId!);
+    const data = value.type === 'discover' ? registry.list() as unknown as JsonValue : await registry.execute(value.capabilityId!, value.input);
     return success(value, data);
   })().then(sendResponse, error => sendResponse(failure(value, error)));
   return true;

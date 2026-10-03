@@ -4,6 +4,7 @@ export interface CapabilityDescriptor {
   id: string;
   title: string;
   description?: string;
+  input?: 'text';
   providerId: string;
   providerKind: ProviderKind;
 }
@@ -11,8 +12,9 @@ export interface Capability<C> {
   id: string;
   title: string;
   description?: string;
+  input?: 'text';
   when?: (context: C) => boolean;
-  run: (context: C) => JsonValue | Promise<JsonValue>;
+  run: (context: C, input?: string) => JsonValue | void | Promise<JsonValue | void>;
 }
 export class CapabilityError extends Error {
   constructor(public readonly code: string, message: string) { super(message); }
@@ -33,15 +35,17 @@ export class Registry<C> {
   }
   list(): CapabilityDescriptor[] {
     const context = this.context();
-    return [...this.commands.values()].filter(command => !command.when || command.when(context)).map(({ id, title, description }) => ({
-      id, title, ...(description ? { description } : {}), providerId: this.providerId, providerKind: this.providerKind,
+    return [...this.commands.values()].filter(command => !command.when || command.when(context)).map(({ id, title, description, input }) => ({
+      id, title, ...(input ? { input } : {}), ...(description ? { description } : {}), providerId: this.providerId, providerKind: this.providerKind,
     }));
   }
-  async execute(id: string): Promise<JsonValue> {
+  async execute(id: string, input?: string): Promise<JsonValue> {
     const command = this.commands.get(id);
     if (!command) throw new CapabilityError('NOT_FOUND', 'Capability is no longer registered.');
+    if (command.input === 'text' && (typeof input !== 'string' || !input.trim() || input.length > 2000)) throw new CapabilityError('INVALID_INPUT', 'Enter a question of 1–2000 characters.');
+    if (command.input !== 'text' && input !== undefined) throw new CapabilityError('INVALID_INPUT', 'This command does not accept input.');
     const context = this.context();
     if (command.when && !command.when(context)) throw new CapabilityError('UNAVAILABLE', 'This action is no longer available. Refresh the launcher.');
-    return command.run(context);
+    return (await command.run(context, input)) ?? null;
   }
 }
