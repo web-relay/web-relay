@@ -30,8 +30,12 @@ Reload both extensions after rebuilding. Pin the launcher in the toolbar. Its bu
 1. On the PWA, use either palette to **Create note**. Select an unpinned note to discover **Pin selected note**; pin it and the command disappears.
 2. On `https://github.com/web-relay/web-relay`, open the launcher for **Open current repository**, **Open repository issues**, and **Open repository pull requests**.
 3. The GitHub provider also exposes **Open Web Relay repository** from any tab. Disable it under **Capability sources** to remove its commands and prevent execution.
-4. **Prepare question for a new ChatGPT chat** accepts a question, copies it, and opens `chatgpt.com`. Paste and send it there. **Share current link with Gemini** copies the current URL and opens `gemini.google.com/app` for pasting. These are clipboard handoffs, not automatic prompt submission.
-5. Browser commands include **Copy current URL**, **Open new tab**, **Open downloads**, and **Duplicate current tab**. Copy and duplicate require an HTTP(S) tab.
+4. Browser commands include **Copy current URL**, **Open new tab**, **Open downloads**, and **Duplicate current tab**. Copy and duplicate require an HTTP(S) tab.
+5. Search tabs by title or URL, or type `tabs` to narrow to the current window's tab commands. Use ↑/↓ and Enter to switch. Tabs in other windows are excluded.
+
+The launcher follows the system light/dark theme. Search matches every word across command title, description, and provider ID: `llm gemini` narrows to the Gemini provider command, while `tabs github` finds matching tabs. Provider scopes entered with Tab remain a design proposal.
+
+AI commands belong to the separate LLM provider; the launcher contains no built-in ChatGPT or Gemini commands. ChatGPT uses a copied page-context prompt that you paste and send. Gemini retains automatic sending.
 
 Actions are discovered when opening or refreshing the launcher; invocation rechecks provider availability and active-tab context. This is pull discovery, not a continuously pushed registry. Errors and timeouts are shown in the launcher. A timeout does not cancel an already-running action; check the app before retrying.
 

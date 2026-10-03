@@ -26,8 +26,27 @@ function browserRegistry(context?: TabContext) {
   registry.register({ id: 'browser.duplicate-tab', title: 'Duplicate current tab', when: ctx => !!ctx && /^https?:\/\//.test(ctx.url), run: async ctx => {
     await chrome.tabs.duplicate(ctx!.tabId); return { message: 'Duplicated the current tab.' };
   } });
-  registry.register({ id: 'ai.chatgpt-question', title: 'Prepare question for a new ChatGPT chat', description: 'Copy a question, open ChatGPT, then paste and send', input: 'text', run: (_ctx, input) => ({ clipboard: input!, openUrl: 'https://chatgpt.com/', message: 'Question copied. Paste and send in ChatGPT.' }) });
-  registry.register({ id: 'ai.gemini-link', title: 'Share current link with Gemini', description: 'Copy the page link and open Gemini for you to paste', when: ctx => !!ctx && /^https?:\/\//.test(ctx.url), run: ctx => ({ clipboard: ctx!.url, openUrl: 'https://gemini.google.com/app', message: 'Link copied. Paste it in Gemini.' }) });
+  return registry;
+}
+async function tabsRegistry(context?: TabContext) {
+  const windowId = context ? (await chrome.tabs.get(context.tabId)).windowId : undefined;
+  const tabs = await chrome.tabs.query(windowId === undefined ? { currentWindow: true } : { windowId });
+  const registry = new Registry('tabs', 'browser', () => context);
+  for (const tab of tabs) {
+    if (tab.id === undefined) continue;
+    const tabId = tab.id;
+    registry.register({
+      id: `tabs.switch-${tabId}`,
+      title: `Switch to ${tab.title || tab.url || 'Untitled tab'}`.slice(0,120),
+      description: `${tab.active ? 'Current tab · ' : ''}${tab.url || ''}`.slice(0,300),
+      run: async () => {
+        const target = await chrome.tabs.get(tabId);
+        if (target.windowId !== tab.windowId) throw new CapabilityError('STALE_CONTEXT', 'That tab moved to another window. Refresh the launcher.');
+        await chrome.tabs.update(tabId, { active: true });
+        return { message: 'Switched tab.' };
+      },
+    });
+  }
   return registry;
 }
 function githubContext(context?: TabContext): TabContext | undefined {
@@ -67,7 +86,8 @@ async function discover(sourceContext?: TabContext): Promise<Snapshot> {
     capabilities.push(...descriptors(await callLlm('discover', context), 'llm', 'extension'));
     sources.push({ name: 'LLM provider', status: 'connected', detail: 'ChatGPT and Gemini page-context chats' });
   } catch { sources.push({ name: 'LLM provider', status: 'unavailable', detail: 'Load the separate LLM provider extension to connect' }); }
-  capabilities.push(...browserRegistry(context).list());
+  capabilities.push(...browserRegistry(context).list(), ...(await tabsRegistry(context)).list());
+  sources.push({ name: 'Tabs', status: 'connected', detail: 'Tabs in this window' });
   return { ...(context ? { context } : {}), capabilities, sources };
 }
 async function execute(command: CapabilityDescriptor, context?: TabContext, input?: string): Promise<JsonValue> {
@@ -78,7 +98,9 @@ async function execute(command: CapabilityDescriptor, context?: TabContext, inpu
   if (!available) throw new CapabilityError('UNAVAILABLE', 'This capability is no longer available. Refresh the launcher.');
   if (context) await validateContext(context);
   switch (command.providerKind) {
-    case 'browser': return browserRegistry(context).execute(command.id, input);
+    case 'browser':
+      if (command.providerId === 'tabs') return (await tabsRegistry(context)).execute(command.id, input);
+      return browserRegistry(context).execute(command.id, input);
     case 'pwa':
       if (!context || !isPwaOrigin(context.url)) throw new CapabilityError('UNTRUSTED_ORIGIN', 'PWA origin is not trusted.');
       return callPwa('execute', context, command.id, input);

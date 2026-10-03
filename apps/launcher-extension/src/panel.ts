@@ -17,8 +17,11 @@ async function panel(message: Record<string, unknown>): Promise<unknown> {
 }
 function report(error: unknown) { status.textContent = error instanceof Error ? error.message : 'The action failed.'; }
 function render() {
-  const query = search.value.toLowerCase().trim();
-  commands = (snapshot?.capabilities || []).filter(command => `${command.title} ${command.description || ''} ${command.providerId}`.toLowerCase().includes(query));
+  const terms = search.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  commands = (snapshot?.capabilities || []).filter(command => {
+    const text = `${command.title} ${command.description || ''} ${command.providerId}`.toLowerCase();
+    return terms.every(term => text.includes(term));
+  });
   selected = Math.min(selected, Math.max(0, commands.length - 1));
   const list = element('#commands'); list.replaceChildren();
   commands.forEach((command, index) => {
@@ -69,7 +72,7 @@ function showQuestion(command: CapabilityDescriptor) {
   element('#question-title').textContent = command.title;
   element<HTMLTextAreaElement>('#question').value = '';
   element('#question').focus();
-  status.textContent = 'Your question will be copied. Paste and send it in the new ChatGPT chat.';
+  status.textContent = 'Enter the text to send to this capability.';
 }
 function cancelQuestion() {
   inputCommand = undefined;

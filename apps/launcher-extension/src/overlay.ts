@@ -16,10 +16,10 @@ else {
   // Bundled static template only; provider metadata and results use textContent.
   dialog.innerHTML = html.match(/<body>([\s\S]*?)<\/body>/)![1]!.replace(/<script[\s\S]*?<\/script>/g, '');
   const sheet = new CSSStyleSheet();
-  sheet.replaceSync(css.replace(':root', ':host').replace('body{', '.panel{') + `
-    :host{all:initial;position:fixed;inset:0;z-index:2147483647;display:block;color-scheme:light}
+  sheet.replaceSync(css.replaceAll(':root', ':host').replace('body{', '.panel{') + `
+    :host{all:initial;position:fixed;inset:0;z-index:2147483647;display:block;color-scheme:light dark}
     .backdrop{position:absolute;inset:0;background:#10271d66;display:flex;align-items:flex-start;justify-content:center;padding:12vh 16px 20px;overflow:auto}
-    .panel{width:460px;max-width:100%;border:1px solid #c4d8c9;border-radius:16px;box-shadow:0 24px 80px #0004;background:#f7faf6;color:#173c2c;padding:22px;font:14px/1.5 system-ui}
+    .panel{width:460px;max-width:100%;border:1px solid var(--border);border-radius:16px;box-shadow:0 24px 80px #0004;background:var(--surface);color:var(--text);padding:22px;font:14px/1.5 system-ui}
     @media(max-height:650px){.backdrop{padding-top:24px}#commands{max-height:240px}}
   `);
   root.adoptedStyleSheets = [sheet]; backdrop.append(dialog); root.append(backdrop);
