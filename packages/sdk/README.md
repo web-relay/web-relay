@@ -1,6 +1,6 @@
 # Web Relay SDK
 
-Local capability registration for PWAs and independently installed Chromium provider extensions. Version 0.1.3 provides bundled ESM JavaScript and TypeScript declarations with no runtime npm dependencies.
+Local capability registration for PWAs and independently installed Chromium provider extensions. Version 0.1.4 provides bundled ESM JavaScript and TypeScript declarations with no runtime npm dependencies.
 
 ## Install from npm
 
@@ -11,7 +11,7 @@ pnpm add @web-relay/sdk
 
 Import the PWA API from `@web-relay/sdk` and the extension provider API from `@web-relay/sdk/extension`. See the [extension integration guide](https://web-relay.github.io/guides/extensions/) and [PWA integration guide](https://web-relay.github.io/guides/pwa/) for pairing and setup. Installing the SDK does not automatically enroll a provider; the launcher must explicitly pair provider IDs and PWA origins.
 
-To pin a release, use `pnpm add @web-relay/sdk@0.1.3` (or `npm install @web-relay/sdk@0.1.3`).
+To pin a release, use `pnpm add @web-relay/sdk@0.1.4` (or `npm install @web-relay/sdk@0.1.4`).
 
 ## Install the development package
 
@@ -25,7 +25,7 @@ pnpm pack:sdk
 Then, from your app or extension project:
 
 ```sh
-pnpm add /absolute/path/to/web-relay/artifacts/web-relay-sdk-0.1.3.tgz
+pnpm add /absolute/path/to/web-relay/artifacts/web-relay-sdk-0.1.4.tgz
 ```
 
 Use your normal browser bundler. Do not copy the reference project's TypeScript path aliases into a package consumer. Node.js is needed for tooling, not for an installed extension or running PWA.
@@ -75,7 +75,7 @@ SDK 0.1.3 adds optional `name` to `createExtensionProvider` and a `describe` res
 
 The development launcher **0.0.3** adds PWA pairing in the same Options page: open the app in exactly one tab, enter its full URL under **Pair a web app**, approve browser host access, check its identity, then approve pairing. No source edits or rebuild are needed for additional hosts. The root path pairs only the home page; other paths include their subpages, so sibling apps on one origin can be paired separately. Disable/remove stops routing; browser host access is retained until revoked in extension site settings. Bundled defaults remain in `apps/launcher-extension/src/providers.ts`.
 
-The development PWA SDK accepts optional `name` and responds to `describe`. It ignores requests addressed to another `providerId`, allowing multiple mounted providers on a page. Published SDK 0.1.3 apps can pair via validated nonempty discovery; for multiple mounted providers, install the development tarball. Registration now rejects descriptions longer than 300 characters, invalid metadata, and a 51st command for PWA/extension registries before discovery. These SDK changes are development source, not a new npm publication.
+SDK 0.1.4 accepts optional `name` and responds to `describe`. It ignores requests addressed to another `providerId`, allowing multiple mounted providers on a page. SDK 0.1.3 apps can pair via validated nonempty discovery; for multiple mounted providers, install SDK 0.1.4 or later. Registration now rejects descriptions longer than 300 characters, invalid metadata, and a 51st command for PWA/extension registries before discovery. See the [0.1.4 release notes](CHANGELOG.md).
 
 `dispose()` removes the listener but does not cancel actions already running; their replies may still be posted. Invocation IDs are not deduplicated. Timeouts and missing replies do not authorize retrying writes. Navigation after a timer is not an acknowledged delivery contract; return-before-navigation acknowledgement remains future work.
 

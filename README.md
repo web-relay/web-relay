@@ -2,7 +2,7 @@
 
 A local-first browser capability runtime, demonstrated with a notes PWA, launcher extension, and independent GitHub.com provider extension in a pnpm monorepo.
 
-**Status:** working development showcase. SDK 0.1.3 is published as `@web-relay/sdk` with bundled JavaScript and TypeScript declarations. Real PWA and cross-extension discovery and invocation are implemented. No backend or GitHub API token is needed.
+**Status:** working development showcase. SDK 0.1.4 is published as `@web-relay/sdk` with bundled JavaScript and TypeScript declarations. Real PWA and cross-extension discovery and invocation are implemented. No backend or GitHub API token is needed.
 
 [Documentation](https://web-relay.github.io/) · [Showcase guide](https://web-relay.github.io/project/showcase/) · [Decisions](https://web-relay.github.io/project/decisions/)
 
