@@ -2,7 +2,9 @@ import { CapabilityError, Registry } from '@web-relay/core';
 import type { CapabilityDescriptor, JsonValue } from '@web-relay/core';
 import { bounded, descriptors, isContext, record, request, unwrap } from '@web-relay/protocol';
 import type { TabContext } from '@web-relay/protocol';
-import type { Snapshot } from './model';
+import { savedWebMcpSources, executeSavedWebMcp, loadWebMcpSites, checkWebMcpSite, approveWebMcpSite, changeWebMcpSite, refreshWebMcpSite } from './webmcp-sites';
+import { discoverWebMcp, executeWebMcp } from './webmcp';
+import type { LauncherCommand, Snapshot } from './model';
 import { matchingPwas, sendPwa, loadSavedPwas, checkPwa, approvePwa, changePwa } from './pwa-pairing';
 import type { ExtensionProvider } from './providers';
 import { allExtensionProviders, loadSavedProviders, checkPairing, approvePairing, changePairing } from './pairing';
@@ -59,7 +61,7 @@ async function callExtension(provider: ExtensionProvider, type: 'discover' | 'ex
 }
 async function discover(sourceContext?: TabContext): Promise<Snapshot> {
   const context = sourceContext ?? await activeContext();
-  const capabilities: CapabilityDescriptor[] = [];
+  const capabilities: LauncherCommand[] = [];
   const sources: Snapshot['sources'] = [{ name: 'Browser', status: 'connected', detail: 'Built-in actions' }];
   const pwas = context ? await matchingPwas(context.url) : [];
   for (const pwa of pwas) {
@@ -70,6 +72,14 @@ async function discover(sourceContext?: TabContext): Promise<Snapshot> {
   }
   if (!pwas.length) sources.push({name:'Web apps',status:'unavailable',detail:'Pair an app in launcher settings, then open its path'});
   const settings = await chrome.storage.local.get(null);
+  if (settings.webmcpEnabled === true && context) {
+    try {
+      const webmcp = await discoverWebMcp(context);
+      capabilities.push(...webmcp.commands);
+      sources.push({name:'WebMCP',status:webmcp.supported ? 'connected' : 'unavailable',detail:webmcp.supported ? 'Preview tools from the current page' : 'Enable WebMCP in Chrome; this page has no supported API'});
+    } catch (error) { sources.push({name:'WebMCP',status:'unavailable',detail:error instanceof Error ? error.message : 'Discovery failed'}); }
+  } else sources.push({name:'WebMCP',status:'disabled',detail:'Enable preview tools below; access is limited to the current page'});
+  for (const saved of await savedWebMcpSources()) { capabilities.push(...saved.commands); sources.push(saved.source); }
   const discovered = await Promise.all((await allExtensionProviders()).map(async provider => {
     if (provider.enabled === false || (provider.enabledSetting && settings[provider.enabledSetting] === false)) {
       return { commands:[] as CapabilityDescriptor[], source:{ name:provider.name, status:'disabled' as const, detail:'Disabled in this launcher' } };
@@ -85,14 +95,23 @@ async function discover(sourceContext?: TabContext): Promise<Snapshot> {
   sources.push({ name: 'Tabs', status: 'connected', detail: 'Tabs in this window' });
   return { ...(context ? { context } : {}), capabilities, sources };
 }
-async function execute(command: CapabilityDescriptor, context?: TabContext, input?: string): Promise<JsonValue> {
+async function execute(command: LauncherCommand, context?: TabContext, input?: string): Promise<JsonValue> {
   // Revalidate the active tab and re-discover providers, including the disabled-provider preference.
   if (context) await validateContext(context);
+  if (command.providerKind === 'webmcp' && command.siteId !== undefined) {
+    return executeSavedWebMcp(command,input,async()=>{if (context) await validateContext(context);});
+  }
   const fresh = await discover();
   const available = fresh.capabilities.some(item => item.id === command.id && item.providerId === command.providerId && item.providerKind === command.providerKind);
   if (!available) throw new CapabilityError('UNAVAILABLE', 'This capability is no longer available. Refresh the launcher.');
   if (context) await validateContext(context);
   switch (command.providerKind) {
+    case 'webmcp': {
+      if (!context) throw new CapabilityError('STALE_CONTEXT','Refresh the launcher on the tool page.');
+      const tool = fresh.capabilities.find(item => item.providerKind === 'webmcp' && item.id === command.id);
+      if (!tool || tool.providerKind !== 'webmcp' || command.providerKind !== 'webmcp' || tool.documentId !== command.documentId || JSON.stringify(tool.inputSchema) !== JSON.stringify(command.inputSchema)) throw new CapabilityError('STALE_CONTEXT','Tool inputs changed. Refresh the launcher.');
+      return executeWebMcp(tool, context, input);
+    }
     case 'browser':
       if (command.providerId === 'tabs') return (await tabsRegistry(context)).execute(command.id, input);
       return browserRegistry(context).execute(command.id, input);
@@ -116,6 +135,17 @@ chrome.runtime.onMessage.addListener((value: unknown, sender, sendResponse) => {
   const sourceContext = injected ? { tabId: sender.tab!.id!, url: sender.url! } : undefined;
   (async () => {
     if (value.type === 'open-settings') { await chrome.runtime.openOptionsPage(); return null; }
+    if (typeof value.type === 'string' && value.type.startsWith('webmcp-site-')) {
+      if (!settingsPage) throw new CapabilityError('UNTRUSTED_SENDER','WebMCP sites can only be registered or changed in extension settings.');
+      const owner = sender.documentId ?? String(sender.tab?.id ?? 'settings');
+      if (value.type === 'webmcp-site-list') return loadWebMcpSites();
+      if (value.type === 'webmcp-site-check') return checkWebMcpSite(value.url,value.name,owner);
+      if (value.type === 'webmcp-site-approve') return approveWebMcpSite(value.token,owner);
+      if (value.type === 'webmcp-site-remove') return changeWebMcpSite(value.id);
+      if (value.type === 'webmcp-site-enable' && typeof value.enabled === 'boolean') return changeWebMcpSite(value.id,value.enabled);
+      if (value.type === 'webmcp-site-refresh') return refreshWebMcpSite(value.id);
+      throw new CapabilityError('INVALID_REQUEST','Invalid WebMCP site request.');
+    }
     if (typeof value.type === 'string' && value.type.startsWith('pwa-')) {
       if (!settingsPage) throw new CapabilityError('UNTRUSTED_SENDER','PWA pairing can only be changed in extension settings.');
       const owner = sender.documentId ?? String(sender.tab?.id ?? 'settings');
@@ -142,16 +172,19 @@ chrome.runtime.onMessage.addListener((value: unknown, sender, sendResponse) => {
       await chrome.tabs.create({ url: value.url });
       return null;
     }
+    if (value.type === 'configure-webmcp' && typeof value.enabled === 'boolean') {
+      await chrome.storage.local.set({webmcpEnabled:value.enabled}); return discover(sourceContext);
+    }
     if (value.type === 'configure' && typeof value.githubEnabled === 'boolean') {
       await chrome.storage.local.set({ githubEnabled: value.githubEnabled }); return discover(sourceContext);
     }
     if (value.type === 'execute' && (value.context === undefined || isContext(value.context)) && record(value.command)) {
       const command = value.command;
       const kind = command.providerKind;
-      if (typeof command.id !== 'string' || typeof command.providerId !== 'string' || !['browser','pwa','extension'].includes(String(kind))) throw new CapabilityError('INVALID_REQUEST', 'Invalid capability selection.');
+      if (typeof command.id !== 'string' || typeof command.providerId !== 'string' || !['browser','pwa','extension','webmcp'].includes(String(kind))) throw new CapabilityError('INVALID_REQUEST', 'Invalid capability selection.');
       if (value.input !== undefined && (typeof value.input !== 'string' || value.input.length > 2000)) throw new CapabilityError('INVALID_INPUT', 'Invalid question input.');
       if (sourceContext && (!isContext(value.context) || sourceContext.tabId !== value.context.tabId || sourceContext.url !== value.context.url)) throw new CapabilityError('STALE_CONTEXT', 'The source page changed. Reopen the launcher.');
-      return execute(command as unknown as CapabilityDescriptor, value.context as TabContext | undefined, value.input as string | undefined);
+      return execute(command as unknown as LauncherCommand, value.context as TabContext | undefined, value.input as string | undefined);
     }
     throw new CapabilityError('INVALID_REQUEST', 'Invalid panel request.');
   })().then(data => sendResponse({ ok: true, data }), error => sendResponse({ ok: false, error: {

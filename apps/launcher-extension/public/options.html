@@ -40,5 +40,20 @@
 </section>
 <p class="hint">Removing an app pairing stops routing to it. Browser host access remains until revoked in extension site settings; other apps may share that host.</p>
 <p class="hint">GitHub and LLM development providers remain bundled defaults. GitHub can be disabled in the launcher's Capability sources. The local Notes PWA remains a bundled development default.</p>
+<section aria-labelledby="webmcp-title">
+<h2 id="webmcp-title">Register a WebMCP site</h2>
+<p>Save a page's tools to use them from any tab. Web Relay reuses the saved page when it is open, or opens it in a background tab when you run a tool.</p>
+<form id="webmcp-site-form">
+<label for="webmcp-site-url">Site page URL</label><input id="webmcp-site-url" type="url" required placeholder="https://cmwen.dev/" autocomplete="off">
+<label for="webmcp-site-name">Site name (optional)</label><input id="webmcp-site-name" type="text" maxlength="120" placeholder="My site" autocomplete="off">
+<p class="hint">Grant browser access, then review the tools before registering. Web Relay uses only this exact page URL. If it is closed, checking the site opens it. Chrome's WebMCP preview must be enabled.</p>
+<button type="submit">Check WebMCP site</button>
+</form>
+<div id="webmcp-site-review" hidden><h3>Review WebMCP site</h3><p id="webmcp-site-identity"></p><ul id="webmcp-site-tools"></ul>
+<button id="webmcp-site-approve" type="button">Register site</button><button id="webmcp-site-cancel" type="button">Cancel site registration</button></div>
+<p id="webmcp-site-status" role="status" aria-live="polite"></p>
+<h3>Saved WebMCP sites</h3><div id="webmcp-site-saved"></div>
+<p class="hint">Tools remain listed when their page closes. Running a tool rediscovers it on the saved page before sending your arguments. Disable or remove a site to stop routing to it. Browser host access remains until revoked in extension site settings.</p>
+</section>
 <script type="module" src="options.js"></script>
 </body></html>

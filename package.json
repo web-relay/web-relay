@@ -11,7 +11,7 @@
     "build": "node scripts/build.mjs",
     "dev:pwa": "node scripts/serve.mjs",
     "test": "node scripts/test.mjs",
-    "test:e2e": "node tests/showcase.mjs && node tests/overlay.mjs && node tests/sdk-extension.mjs && node tests/pairing.mjs && node tests/pwa-pairing.mjs",
+    "test:e2e": "node tests/showcase.mjs && node tests/overlay.mjs && node tests/sdk-extension.mjs && node tests/pairing.mjs && node tests/pwa-pairing.mjs && node tests/webmcp.mjs && node tests/webmcp-sites.mjs",
     "build:sdk": "node scripts/build-sdk.mjs",
     "pack:sdk": "node scripts/pack-sdk.mjs",
     "test:sdk": "node tests/sdk-package.mjs",

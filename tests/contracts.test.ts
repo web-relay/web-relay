@@ -136,3 +136,63 @@ test('PWA scopes separate the hub from sibling apps and retain exact-origin chec
   assert.equal(isRequest({...request('discover'),providerId:'personal-hub'}),true);
   assert.equal(isRequest({...request('discover'),providerId:'INVALID'}),false);
 });
+
+test('WebMCP preview surfaces select the execution signature without retrying writes', async t => {
+  const { webMcpPage } = await import('../apps/launcher-extension/src/webmcp');
+  const previous = new Map<string, PropertyDescriptor | undefined>();
+  const set = (key: string, value: unknown) => {
+    if (!previous.has(key)) previous.set(key, Object.getOwnPropertyDescriptor(globalThis,key));
+    Object.defineProperty(globalThis,key,{configurable:true,value});
+  };
+  t.after(()=>{for(const [key,descriptor] of previous) {
+    if(descriptor) Object.defineProperty(globalThis,key,descriptor); else Reflect.deleteProperty(globalThis,key);
+  }});
+  const win: {top?: unknown} = {}; win.top=win;
+  set('window',win);set('location',{href:'https://example.com/',origin:'https://example.com'});
+  const schema = {type:'object',properties:{text:{type:'string'}}};
+  const tool = {name:'echo',inputSchema:schema,origin:'https://example.com',window:win};
+  let calls=0;
+  let args: unknown;
+  const modern = {getTools:async()=>[tool,{...tool,name:'iframe',window:{}}],executeTool:async (_tool: unknown,input: unknown)=>{calls++;args=input;return 'done';}};
+  set('document',{modelContext:modern});set('navigator',{userAgent:'Chrome/155.0'});
+  const discovered=await webMcpPage('https://example.com/');
+  assert.equal(discovered.ok,true);
+  if(discovered.ok && Array.isArray(discovered.data)) assert.equal(discovered.data.length,1);
+  await webMcpPage('https://example.com/','echo','{"text":"hello"}',JSON.stringify(schema));
+  assert.deepEqual(args,{text:'hello'});
+  const reordered = {properties:schema.properties,type:schema.type};
+  assert.equal((await webMcpPage('https://example.com/','echo','{}',JSON.stringify(reordered))).ok,true);
+  set('navigator',{userAgent:'Chrome/153.0'});
+  tool.inputSchema = JSON.stringify(schema) as unknown as typeof schema;
+  const stringSchema = await webMcpPage('https://example.com/');
+  if (stringSchema.ok && Array.isArray(stringSchema.data)) assert.deepEqual(stringSchema.data[0]?.inputSchema,schema);
+  await webMcpPage('https://example.com/','echo','{}',JSON.stringify(schema));
+  assert.equal(args,'{}');
+  assert.equal((await webMcpPage('https://example.com/','echo','{}','{}')).ok,false);
+  assert.equal(calls,3);
+  modern.executeTool=async()=>{calls++;throw new Error('failed after delivery');};
+  assert.equal((await webMcpPage('https://example.com/','echo','{}',JSON.stringify(schema))).ok,false);
+  assert.equal(calls,4);
+  set('document',{});
+  set('navigator',{userAgent:'Chrome/145.0',modelContextTesting:{listTools:()=>[{name:'echo',inputSchema:schema}],executeTool:async (name: unknown,input: unknown)=>{assert.equal(name,'echo');args=input;return 'legacy';}}});
+  assert.equal((await webMcpPage('https://example.com/','echo','{}',JSON.stringify(schema))).ok,true);
+  assert.equal(args,'{}');
+  set('navigator',{});
+  const unavailable=await webMcpPage('https://example.com/');
+  assert.equal(unavailable.ok && unavailable.supported,false);
+  assert.equal((await webMcpPage('https://other.example/')).ok,false);
+});
+
+test('saved WebMCP sites validate exact URLs, isolated identities, and bounded metadata', async () => {
+  const {webMcpSiteUrl,savedWebMcpSites,schemaKey} = await import('../apps/launcher-extension/src/webmcp-sites');
+  assert.equal(webMcpSiteUrl('https://example.com'),'https://example.com/');
+  assert.equal(webMcpSiteUrl('https://example.com/app'),'https://example.com/app');
+  for (const url of ['javascript:alert(1)','https://user:pass@example.com/','https://example.com/?token=fixture','https://example.com/#view','https://example.com/*','https://example.com/%2fapp']) assert.throws(()=>webMcpSiteUrl(url));
+  const tool = {id:'tool_name',title:'Search',inputSchema:{type:'object',properties:{query:{type:'string'}}}};
+  const site = {id:'webmcp-site.12345678-1234-1234-1234-123456789abc',name:'Search site',url:'https://example.com/',enabled:true,tools:[tool]};
+  assert.deepEqual(savedWebMcpSites([site]),[site]);
+  assert.deepEqual(savedWebMcpSites(undefined),[]);
+  for (const value of [[site,site],[{...site,id:'browser'}],[{...site,url:'https://example.com'}],[{...site,tools:[tool,tool]}],[{...site,tools:[{...tool,inputSchema:'{}'}]}],[{...site,enabled:'yes'}]]) assert.throws(()=>savedWebMcpSites(value));
+  assert.equal(schemaKey({type:'object',properties:{x:{type:'number'}}}),schemaKey({properties:{x:{type:'number'}},type:'object'}));
+  assert.notEqual(schemaKey({required:['x','y']}),schemaKey({required:['y','x']}));
+});

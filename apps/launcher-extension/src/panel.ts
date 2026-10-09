@@ -1,25 +1,26 @@
-import type { CapabilityDescriptor } from '@web-relay/core';
+import type { LauncherCommand } from './model';
 import { bounded, record } from '@web-relay/protocol';
 import type { Snapshot } from './model';
 
 export function mountLauncher(root: Document | ShadowRoot, close: () => void): void {
 const element = <T extends HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
 let snapshot: Snapshot | undefined;
-let commands: CapabilityDescriptor[] = [];
+let commands: LauncherCommand[] = [];
 let selected = 0;
 let busy = false;
 const search = element<HTMLInputElement>('#search');
 const status = element('#status');
 async function panel(message: Record<string, unknown>): Promise<unknown> {
-  const result: unknown = await bounded(chrome.runtime.sendMessage({ channel: 'web-relay:panel', version: 1, ...message }), 10000);
+  const result: unknown = await bounded(chrome.runtime.sendMessage({ channel: 'web-relay:panel', version: 1, ...message }), message.type === 'execute' ? 25000 : 10000);
   if (!record(result) || result.ok !== true) throw new Error(record(result) && record(result.error) && typeof result.error.message === 'string' ? result.error.message : 'Launcher request failed.');
   return result.data;
 }
 function report(error: unknown) { status.textContent = error instanceof Error ? error.message : 'The action failed.'; }
 function render() {
+  element<HTMLInputElement>('#webmcp-enabled').disabled = busy;
   const terms = search.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
   commands = (snapshot?.capabilities || []).filter(command => {
-    const text = `${command.title} ${command.description || ''} ${command.providerId}`.toLowerCase();
+    const text = `${command.title} ${command.description || ''} ${command.providerId} ${command.providerKind === 'webmcp' ? command.sourceName ?? '' : ''}`.toLowerCase();
     return terms.every(term => text.includes(term));
   });
   selected = Math.min(selected, Math.max(0, commands.length - 1));
@@ -29,7 +30,7 @@ function render() {
     button.className = 'command' + (index === selected ? ' selected' : '');
     button.disabled = busy;
     const title = document.createElement('span'); title.textContent = command.title;
-    const source = document.createElement('small'); source.textContent = command.providerId;
+    const source = document.createElement('small'); source.textContent = command.providerKind === 'webmcp' ? command.sourceName ?? command.providerId : command.providerId;
     button.append(title, source);
     button.addEventListener('click', event => { if (event.isTrusted) void run(command); });
     list.append(button);
@@ -45,6 +46,7 @@ function apply(value: unknown) {
   }
   element('#context').textContent = snapshot.context ? new URL(snapshot.context.url).hostname || snapshot.context.url : 'No active page context';
   element<HTMLInputElement>('#github-enabled').checked = !snapshot.sources.some(source => source.name === 'GitHub provider' && source.status === 'disabled');
+  element<HTMLInputElement>('#webmcp-enabled').checked = !snapshot.sources.some(source => source.name === 'WebMCP' && source.status === 'disabled');
   render();
 }
 async function refresh() {
@@ -54,7 +56,7 @@ async function refresh() {
   catch (error) { snapshot = undefined; render(); report(error); }
   finally { busy = false; render(); }
 }
-let inputCommand: CapabilityDescriptor | undefined;
+let inputCommand: LauncherCommand | undefined;
 async function copy(text: string) {
   // Clipboard permission is extension-scoped; execCommand covers non-secure HTTP pages.
   try { if (navigator.clipboard) { await navigator.clipboard.writeText(text); return; } } catch {}
@@ -64,15 +66,21 @@ async function copy(text: string) {
   const copied = document.execCommand('copy'); textarea.remove();
   if (!copied) throw new Error('Could not copy. Keep the launcher open and try again.');
 }
-function showQuestion(command: CapabilityDescriptor) {
+function showQuestion(command: LauncherCommand) {
   inputCommand = command;
   element('#question-form').hidden = false;
   element('#commands').hidden = true;
   element('#search').hidden = true;
   element('#question-title').textContent = command.title;
-  element<HTMLTextAreaElement>('#question').value = '';
+  const json = command.providerKind === 'webmcp';
+  element('#question-label').textContent = json ? 'JSON arguments' : 'Question';
+  element('#question-hint').textContent = json ? command.description || 'Review the tool and its arguments before running.' : 'Send this text to the selected capability.';
+  element('#tool-schema').hidden = !json;
+  element('#tool-schema').textContent = json ? JSON.stringify(command.inputSchema, null, 2) : '';
+  element<HTMLTextAreaElement>('#question').placeholder = json ? '{}' : 'What would you like to ask?';
+  element<HTMLTextAreaElement>('#question').value = json ? '{}' : '';
   element('#question').focus();
-  status.textContent = 'Enter the text to send to this capability.';
+  status.textContent = json ? 'Review JSON arguments, then run the tool.' : 'Enter the text to send to this capability.';
 }
 function cancelQuestion() {
   inputCommand = undefined;
@@ -86,9 +94,9 @@ element('#question-send').addEventListener('click', event => {
   if (event.isTrusted && inputCommand) void run(inputCommand, element<HTMLTextAreaElement>('#question').value);
 });
 element('#question-cancel').addEventListener('click', cancelQuestion);
-async function run(command: CapabilityDescriptor, input?: string) {
+async function run(command: LauncherCommand, input?: string) {
   if (busy) return;
-  if (command.input === 'text' && input === undefined) { showQuestion(command); return; }
+  if ((command.input === 'text' || command.input === 'json') && input === undefined) { showQuestion(command); return; }
   busy = true; render(); status.textContent = `Running ${command.title}…`;
   try {
     const result = await panel({ type: 'execute', command, context: snapshot?.context, ...(input !== undefined ? { input } : {}) });
@@ -116,6 +124,16 @@ search.addEventListener('keydown', event => {
   }
   if (event.key === 'Enter' && commands[selected]) { event.preventDefault(); void run(commands[selected]!); }
   if (event.key === 'Escape') close();
+});
+element<HTMLInputElement>('#webmcp-enabled').addEventListener('click', async event => {
+  if (!event.isTrusted || busy) return;
+  busy = true; render();
+  try { apply(await panel({type:'configure-webmcp',enabled:(event.target as HTMLInputElement).checked})); status.textContent = 'WebMCP preference saved.'; }
+  catch (error) { report(error); } finally { busy = false; render(); }
+});
+element('#webmcp-settings').addEventListener('click',async event=>{
+  if (!event.isTrusted) return;
+  try { await panel({type:'open-settings'}); close(); } catch (error) { report(error); }
 });
 element('#provider-settings').addEventListener('click', async event => {
   if (!event.isTrusted) return;

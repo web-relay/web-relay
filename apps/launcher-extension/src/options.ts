@@ -1,3 +1,5 @@
+import { webMcpSiteUrl } from './webmcp-sites';
+import type { SavedWebMcpSite, SavedWebMcpTool } from './webmcp-sites';
 import { pwaScope, hostPattern } from './pwa-pairing';
 import type { SavedPwa } from './pwa-pairing';
 import { bounded, record } from '@web-relay/protocol';
@@ -51,12 +53,13 @@ async function load() {
   element('launcher-id').textContent = data.launcherId;
   render(data.providers);
   renderPwas(await api({type:'pwa-list'}) as SavedPwa[]);
+  renderWebMcpSites(await api({type:'webmcp-site-list'}) as SavedWebMcpSite[]);
 }
 element('pairing-form').addEventListener('submit', event=>{
   event.preventDefault();
   if (!event.isTrusted) return;
   void task(async()=>{
-    cancel(); cancelPwa(); status.textContent = 'Checking connection…';
+    cancel(); cancelPwa(); cancelWebMcpSite(); status.textContent = 'Checking connection…';
     const data = await api({type:'pairing-check',extensionId:element<HTMLInputElement>('extension-id').value.trim()}) as {token:string;name:string;providerId:string;extensionId:string;protocolVersion:number};
     token = data.token;
     element('review-name').textContent = data.name;
@@ -77,7 +80,7 @@ element('approve').addEventListener('click', event=>{
     status.textContent = 'Provider paired. Refresh the launcher to discover its commands.';
   });
 });
-element('reload').addEventListener('click', event=>{ if (event.isTrusted) void task(async()=>{cancel();cancelPwa();await load();status.textContent='Saved providers refreshed.';}); });
+element('reload').addEventListener('click', event=>{ if (event.isTrusted) void task(async()=>{cancel();cancelPwa();cancelWebMcpSite();await load();status.textContent='Saved providers refreshed.';}); });
 
 
 let pwaToken: string | undefined;
@@ -104,7 +107,7 @@ function renderPwas(providers: SavedPwa[]) {
 element('pwa-form').addEventListener('submit',event=>{
   event.preventDefault(); if (!event.isTrusted) return;
   void task(async()=>{
-    cancelPwa(); cancel();
+    cancelPwa(); cancel(); cancelWebMcpSite();
     const url = element<HTMLInputElement>('pwa-url').value.trim();
     const scope = pwaScope(url);
     pwaStatus.textContent = 'Requesting site access and checking connection…';
@@ -125,6 +128,66 @@ element('pwa-approve').addEventListener('click',event=>{
   void task(async()=>{
     renderPwas(await api({type:'pwa-approve',token:pwaToken}) as SavedPwa[]);
     cancelPwa(); pwaStatus.textContent = 'App paired. Refresh the launcher to discover its commands.';
+  });
+});
+
+let webMcpToken: string | undefined;
+function webMcpTask(run: () => Promise<void>) {
+  return task(async()=>{
+    try { await run(); } catch(error) { element('webmcp-site-status').textContent = error instanceof Error ? error.message : 'Could not update the site.'; }
+  });
+}
+function cancelWebMcpSite() { webMcpToken = undefined; element('webmcp-site-review').hidden = true; }
+function renderWebMcpSites(sites: SavedWebMcpSite[]) {
+  const list = element('webmcp-site-saved'); list.replaceChildren();
+  if (!sites.length) { const empty = document.createElement('p'); empty.textContent = 'No WebMCP sites registered.'; list.append(empty); }
+  for (const site of sites) {
+    const row = document.createElement('div'); row.className = 'paired-provider';
+    const title = document.createElement('h3'); title.textContent = site.name;
+    const detail = document.createElement('p'); detail.textContent = `${site.url} · ${site.tools.length} saved tools`;
+    const action = (label: string, type: string, enabled?: boolean) => {
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+      button.setAttribute('aria-label',`${label} ${site.name}`);
+      button.addEventListener('click',event=>{if(event.isTrusted) void webMcpTask(async()=>{
+        const data = await api({type,id:site.id,enabled}); renderWebMcpSites(data as SavedWebMcpSite[]);
+        element('webmcp-site-status').textContent = 'Saved site updated. Refresh the launcher to update its tools.';
+      });}); return button;
+    };
+    const restore = document.createElement('button'); restore.type = 'button'; restore.textContent = 'Restore site access';
+    restore.setAttribute('aria-label',`Restore site access ${site.name}`);
+    restore.addEventListener('click',event=>{if(event.isTrusted) void webMcpTask(async()=>{
+      const allowed = await chrome.permissions.request({origins:[hostPattern({origin:new URL(site.url).origin,path:'/'})]});
+      element('webmcp-site-status').textContent = allowed ? 'Site access restored. Refresh the launcher.' : 'Site access was declined.';
+    });});
+    row.append(title,detail,action(site.enabled ? 'Disable site' : 'Enable site','webmcp-site-enable',!site.enabled),
+      action('Remove site','webmcp-site-remove'),action('Refresh site tools','webmcp-site-refresh'),restore); list.append(row);
+  }
+}
+element('webmcp-site-form').addEventListener('submit',event=>{
+  event.preventDefault(); if (!event.isTrusted) return;
+  void webMcpTask(async()=>{
+    cancelWebMcpSite(); cancel(); cancelPwa();
+    const url = webMcpSiteUrl(element<HTMLInputElement>('webmcp-site-url').value.trim());
+    const siteStatus = element('webmcp-site-status'); siteStatus.textContent = 'Requesting site access and discovering tools…';
+    if (!await chrome.permissions.request({origins:[hostPattern({origin:new URL(url).origin,path:'/'})]})) {
+      siteStatus.textContent = 'Site access was declined. The site was not registered.'; return;
+    }
+    const data = await api({type:'webmcp-site-check',url,name:element<HTMLInputElement>('webmcp-site-name').value.trim()}) as {token:string;url:string;name:string;tools:SavedWebMcpTool[]};
+    webMcpToken = data.token;
+    element('webmcp-site-identity').textContent = `${data.name} · ${data.url}`;
+    const tools = element('webmcp-site-tools'); tools.replaceChildren();
+    for (const tool of data.tools) { const item=document.createElement('li'); item.textContent = `${tool.title}${tool.description ? ' — '+tool.description : ''}`; tools.append(item); }
+    element('webmcp-site-review').hidden = false;
+    siteStatus.textContent = 'Review the page URL and tools, then register the site.';
+  });
+});
+for (const id of ['webmcp-site-url','webmcp-site-name']) element(id).addEventListener('input',cancelWebMcpSite);
+element('webmcp-site-cancel').addEventListener('click',cancelWebMcpSite);
+element('webmcp-site-approve').addEventListener('click',event=>{
+  if (!event.isTrusted || !webMcpToken) return;
+  void webMcpTask(async()=>{
+    renderWebMcpSites(await api({type:'webmcp-site-approve',token:webMcpToken}) as SavedWebMcpSite[]);
+    cancelWebMcpSite(); element('webmcp-site-status').textContent = 'Site registered. Its tools are available from any tab.';
   });
 });
 

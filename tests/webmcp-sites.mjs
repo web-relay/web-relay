@@ -1,0 +1,170 @@
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright';
+import { cp, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { createHash } from 'node:crypto';
+const fixture=await mkdtemp(join(tmpdir(),'web-relay-webmcp-sites-'));
+const launcher=join(fixture,'launcher'), provider=resolve('apps/webapp-extension/dist');
+await cp(resolve('apps/launcher-extension/dist'),launcher,{recursive:true});
+const manifest=JSON.parse(await readFile(join(launcher,'manifest.json'),'utf8'));
+// Use a disposable extension and a real loopback server for background-tab navigation.
+if(process.argv.includes('--live-site')) manifest.host_permissions.push('https://cmwen.dev/*');
+await writeFile(join(launcher,'manifest.json'),JSON.stringify(manifest));
+const id=[...createHash('sha256').update(Buffer.from(manifest.key,'base64')).digest('hex').slice(0,32)].map(c=>String.fromCharCode(97+parseInt(c,16))).join('');
+let url,second;
+const body=`<!doctype html><title>Native saved-site fixture</title><p id="output">No calls</p><script>
+window.calls=Number(localStorage.calls||0);window.changed=false;
+window.mount=async()=>{
+  window.controller?.abort();window.controller=new AbortController();
+  await document.modelContext.registerTool({name:'saved_echo',description:'Echo from '+location.pathname,inputSchema:window.changed?{type:'object',properties:{changed:{type:'boolean'}}}:{type:'object',properties:{value:{type:'string'}},required:['value']},execute:args=>{
+    window.calls++;localStorage.calls=String(window.calls);document.querySelector('#output').textContent=args.value||'changed';return 'Result from '+location.pathname+': '+(args.value||'changed');
+  }},{signal:window.controller.signal});
+};setTimeout(()=>mount(),300);
+</script>`;
+const server=createServer((request,response)=>{if(request.url==='/redirect'){response.writeHead(302,{location:'/'});response.end();return;}response.writeHead(200,{'content-type':'text/html'});response.end(body);});
+server.listen(0,'127.0.0.1');await once(server,'listening');
+url=`http://127.0.0.1:${server.address().port}/`;second=url+'second/';
+let browser;
+try {
+  browser=await chromium.launchPersistentContext(join(fixture,'profile'),{channel:'chromium',headless:true,
+    ...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{}),
+    args:[`--disable-extensions-except=${launcher},${provider}`,`--load-extension=${launcher},${provider}`,'--enable-unsafe-extension-debugging','--enable-blink-features=WebMCP,WebMCPTesting','--no-sandbox','--no-proxy-server']});
+  browser.setDefaultTimeout(15000);
+  browser.on('page',page=>page.on('pageerror',error=>console.log('Fixture page error:',error.message)));
+  await browser.route('https://other.example/**',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><title>Unrelated page</title>'}));
+  const settings=await browser.newPage();await settings.goto(`chrome-extension://${id}/options.html`);
+  await settings.getByText('Ready to pair an extension.',{exact:true}).waitFor();
+  const popup=await browser.newPage();await popup.goto(`chrome-extension://${id}/popup.html`);
+  const api=(page,message)=>page.evaluate(message=>chrome.runtime.sendMessage({channel:'web-relay:panel',version:1,...message}),message);
+  assert.equal((await api(popup,{type:'webmcp-site-check',url})).error.code,'UNTRUSTED_SENDER');
+  assert.equal((await api(settings,{type:'webmcp-site-approve',token:'invented'})).error.code,'APPROVAL_REQUIRED');
+  await settings.bringToFront();
+  await settings.locator('#webmcp-site-url').fill(url);await settings.locator('#webmcp-site-name').fill('My search');
+  await settings.evaluate(()=>{window.originalRequest=chrome.permissions.request;chrome.permissions.request=async()=>false;});
+  await settings.getByRole('button',{name:'Check WebMCP site',exact:true}).click();
+  await settings.getByText('Site access was declined. The site was not registered.',{exact:true}).waitFor();
+  assert.equal((await api(settings,{type:'webmcp-site-list'})).data.length,0);
+  await settings.evaluate(()=>{chrome.permissions.request=window.originalRequest;});
+  await settings.getByRole('button',{name:'Check WebMCP site',exact:true}).click();
+  try { await settings.getByRole('heading',{name:'Review WebMCP site',exact:true}).waitFor(); } catch(error) {
+    console.log('Settings status:',await settings.locator('#status').textContent(),await settings.locator('#webmcp-site-status').textContent());
+    for(const page of browser.pages()) if(page.url()===url) console.log('Fixture API:',await page.evaluate(async()=>({tools:await document.modelContext.getTools(),status:document.readyState})));
+    throw error;
+  }
+  assert.equal((await api(settings,{type:'webmcp-site-list'})).data.length,0);
+  await settings.locator('#webmcp-site-approve').evaluate(button=>button.click());
+  assert.equal((await api(settings,{type:'webmcp-site-list'})).data.length,0);
+  await settings.getByRole('button',{name:'Register site',exact:true}).click();
+  await settings.getByRole('button',{name:'Disable site My search',exact:true}).waitFor();
+  const site=(await api(settings,{type:'webmcp-site-list'})).data[0];
+  assert.equal((await api(settings,{type:'webmcp-site-check',url})).error.code,'ALREADY_PAIRED');
+  let owner=browser.pages().find(page=>page.url()===url);assert.ok(owner);
+  assert.equal(await owner.evaluate(()=>window.calls),0);
+  console.log('PASS explicit optional access, settings-only review/approval, synthetic click rejection, no tool execution on registration');
+  const other=await browser.newPage();await other.goto('https://other.example/');
+  const cdp=await browser.browser().newBrowserCDPSession();
+  await other.bringToFront();
+  const {targetInfos}=await cdp.send('Target.getTargets',{filter:[{type:'tab'},{exclude:true}]});
+  await cdp.send('Extensions.triggerAction',{id,targetId:targetInfos.find(target=>target.url===other.url()).targetId});
+  const ui=other.locator('web-relay-launcher');
+  await ui.getByRole('button',{name:'saved_echo My search · WebMCP',exact:true}).click();
+  await ui.locator('#question').fill('{"value":"Cross-tab"}');await ui.locator('#question-send').click();
+  await ui.locator('#status').filter({hasText:'Result from /: Cross-tab'}).waitFor();
+  assert.equal(await owner.evaluate(()=>window.calls),1);
+  assert.equal((await api(popup,{type:'list'})).data.context.url,other.url());
+  await ui.locator('#search').press('Escape');
+  let snapshot=(await api(popup,{type:'list'})).data;
+  let command=snapshot.capabilities.find(command=>command.siteId===site.id);assert.ok(command);
+  const execute=(command,input='{"value":"Reopened"}')=>api(popup,{type:'execute',command,context:snapshot.context,input});
+  await owner.close();
+  snapshot=(await api(popup,{type:'list'})).data;
+  assert.ok(snapshot.capabilities.some(command=>command.siteId===site.id));
+  assert.equal(browser.pages().some(page=>page.url()===url),false);
+  assert.equal((await execute(command,'not JSON')).error.code,'INVALID_INPUT');
+  assert.equal(browser.pages().some(page=>page.url()===url),false);
+  assert.equal((await execute(command)).ok,true);
+  owner=browser.pages().find(page=>page.url()===url);assert.ok(owner);
+  assert.equal(await owner.evaluate(()=>window.calls),2);
+  assert.equal((await api(popup,{type:'list'})).data.context.url,other.url());
+  console.log('PASS global launcher invocation, background tab reuse, catalog survives closure and worker reopens site only on invocation');
+  const duplicate=await browser.newPage();await duplicate.goto(url);await other.bringToFront();
+  assert.equal((await execute(command)).error.code,'AMBIGUOUS_PAGE');
+  assert.equal(await owner.evaluate(()=>window.calls),2);await duplicate.close();
+  await owner.evaluate(async()=>{window.changed=true;await mount();});
+  assert.equal((await execute(command)).error.code,'STALE_CONTEXT');
+  assert.equal(await owner.evaluate(()=>window.calls),2);
+  snapshot=(await api(popup,{type:'list'})).data;command=snapshot.capabilities.find(command=>command.siteId===site.id);
+  assert.ok(command.inputSchema.properties.changed);
+  await owner.evaluate(()=>controller.abort());
+  // A missing selected tool is rejected; allow a different live tool so rediscovery completes immediately.
+  await owner.evaluate(async()=>{window.replacementController=new AbortController();await document.modelContext.registerTool({name:'replacement',description:'Replacement',inputSchema:{type:'object',properties:{}},execute:()=>{window.calls++;return 'never';}},{signal:replacementController.signal});});
+  assert.equal((await execute(command,'{}')).error.code,'STALE_CONTEXT');
+  assert.equal(await owner.evaluate(()=>window.calls),2);
+  snapshot=(await api(popup,{type:'list'})).data;
+  const replacement=snapshot.capabilities.find(command=>command.siteId===site.id);
+  await owner.evaluate(()=>replacementController.abort());
+  assert.equal((await execute(replacement,'{}')).error.code,'STALE_CONTEXT');
+  assert.equal((await api(popup,{type:'list'})).data.capabilities.some(command=>command.siteId===site.id),false);
+  assert.equal(await owner.evaluate(()=>window.calls),2);
+  console.log('PASS duplicate tabs, schema changes, and removal of one or all tools reject execution');
+  await owner.reload();await owner.waitForFunction(async()=> (await document.modelContext.getTools()).some(tool=>tool.name==='saved_echo'));
+  await api(settings,{type:'webmcp-site-refresh',id:site.id});
+  snapshot=(await api(popup,{type:'list'})).data;command=snapshot.capabilities.find(command=>command.siteId===site.id);
+  await api(settings,{type:'webmcp-site-enable',id:site.id,enabled:false});
+  assert.equal((await execute(command)).error.code,'UNAVAILABLE');
+  assert.equal((await api(popup,{type:'list'})).data.capabilities.some(command=>command.siteId===site.id),false);
+  await api(settings,{type:'webmcp-site-enable',id:site.id,enabled:true});
+  const worker=browser.serviceWorkers().find(worker=>worker.url().includes(id));
+  await worker.evaluate(()=>{globalThis.realContains=chrome.permissions.contains;chrome.permissions.contains=async request=>request.origins?.includes('http://127.0.0.1/*') ? false : realContains(request);});
+  assert.equal((await execute(command)).error.code,'PERMISSION_REQUIRED');
+  assert.equal((await api(popup,{type:'list'})).data.capabilities.some(command=>command.siteId===site.id),false);
+  await worker.evaluate(()=>{chrome.permissions.contains=realContains;});
+  const checked=await api(settings,{type:'webmcp-site-check',url:second,name:'Second search'});assert.equal(checked.ok,true);
+  assert.equal((await api(settings,{type:'webmcp-site-approve',token:checked.data.token})).ok,true);
+  snapshot=(await api(popup,{type:'list'})).data;
+  const secondCommand=snapshot.capabilities.find(command=>command.sourceName==='Second search · WebMCP');assert.ok(secondCommand);
+  assert.equal((await execute(secondCommand,'{"value":"Second"}')).data.message,'Result from /second/: Second');
+  assert.equal(await owner.evaluate(()=>window.calls),2);
+  await api(settings,{type:'webmcp-site-remove',id:site.id});
+  assert.equal((await execute(command)).error.code,'UNAVAILABLE');
+  console.log('PASS saved-tool refresh, disable/remove, revoked permission rejection (simulated), and identical tool names on different sites');
+  if(process.argv.includes('--live-site')) {
+    const live=await api(settings,{type:'webmcp-site-check',url:'https://cmwen.dev/',name:'Min’s site'});
+    assert.equal(live.ok,true,JSON.stringify(live));
+    assert.ok(live.data.tools.some(tool=>tool.id==='search_site'));
+    const registered=await api(settings,{type:'webmcp-site-approve',token:live.data.token});assert.equal(registered.ok,true,JSON.stringify(registered));
+    const livePage=browser.pages().find(page=>page.url()==='https://cmwen.dev/');assert.ok(livePage);await livePage.close();
+    await other.bringToFront();
+    const globalList=await api(popup,{type:'list'});
+    assert.ok(globalList.data.capabilities.some(tool=>tool.id==='search_site' && tool.sourceName==='Min’s site · WebMCP'));
+    assert.equal(browser.pages().some(page=>page.url()==='https://cmwen.dev/'),false);
+    const liveSite=registered.data.find(site=>site.url==='https://cmwen.dev/');
+    await api(settings,{type:'webmcp-site-remove',id:liveSite.id});
+    console.log('PASS deployed cmwen.dev registration and global catalog after page closure; no site tool invoked');
+  }
+  const changedApproval=await api(settings,{type:'webmcp-site-check',url:url+'approval',name:'Changing site'});
+  assert.equal(changedApproval.ok,true);
+  const approvalPage=browser.pages().find(page=>page.url()===url+'approval');
+  await approvalPage.evaluate(async()=>{window.changed=true;await mount();});
+  assert.equal((await api(settings,{type:'webmcp-site-approve',token:changedApproval.data.token})).error.code,'IDENTITY_CHANGED');
+  const redirect=await api(settings,{type:'webmcp-site-check',url:url+'redirect'});
+  assert.equal(redirect.ok,false);assert.equal(redirect.error.code,'UNTRUSTED_ORIGIN');
+  console.log('PASS registration rechecks reviewed tools and rejects redirects outside the exact saved page');
+  // Persistent storage contains metadata only, independent of any page's document ID.
+  const stored=await worker.evaluate(()=>chrome.storage.local.get('savedWebMcpSites'));
+  assert.equal(stored.savedWebMcpSites.length,1);
+  assert.equal(stored.savedWebMcpSites[0].url,second);
+  assert.equal('documentId' in stored.savedWebMcpSites[0].tools[0],false);
+  await browser.close();
+  browser=await chromium.launchPersistentContext(join(fixture,'profile'),{channel:'chromium',headless:true,
+    ...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{}),
+    args:[`--disable-extensions-except=${launcher},${provider}`,`--load-extension=${launcher},${provider}`,'--enable-blink-features=WebMCP,WebMCPTesting','--no-sandbox','--no-proxy-server']});
+  const afterRestart=await browser.newPage();await afterRestart.goto(`chrome-extension://${id}/popup.html`);
+  const restarted=await api(afterRestart,{type:'list'});
+  assert.equal(restarted.ok,true,JSON.stringify(restarted));
+  assert.ok(restarted.data.capabilities.some(command=>command.sourceName==='Second search · WebMCP'));
+  console.log('PASS saved site catalog survives browser and service-worker restart');
+} finally {await browser?.close();server.close();await rm(fixture,{recursive:true,force:true});}
