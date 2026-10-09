@@ -42,7 +42,7 @@ else {
     key.stopPropagation();
     if (key.key === 'Escape') { key.preventDefault(); close(); }
     if (key.key === 'Tab') {
-      const focusable = [...root.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), summary')].filter(element => element.getClientRects().length > 0);
+      const focusable = [...root.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary')].filter(element => element.getClientRects().length > 0);
       const first = focusable[0], last = focusable.at(-1);
       if (key.shiftKey && root.activeElement === first) { key.preventDefault(); last?.focus(); }
       else if (!key.shiftKey && root.activeElement === last) { key.preventDefault(); first?.focus(); }

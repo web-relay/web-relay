@@ -71,7 +71,7 @@ try {
   await cdp.send('Extensions.triggerAction',{id,targetId:targetInfos.find(target=>target.url===other.url()).targetId});
   const ui=other.locator('web-relay-launcher');
   await ui.getByRole('button',{name:'saved_echo My search · WebMCP',exact:true}).click();
-  await ui.locator('#question').fill('{"value":"Cross-tab"}');await ui.locator('#question-send').click();
+  await ui.getByLabel('Value (required)',{exact:true}).fill('Cross-tab');await ui.locator('#question-send').click();
   await ui.locator('#status').filter({hasText:'Result from /: Cross-tab'}).waitFor();
   assert.equal(await owner.evaluate(()=>window.calls),1);
   assert.equal((await api(popup,{type:'list'})).data.context.url,other.url());

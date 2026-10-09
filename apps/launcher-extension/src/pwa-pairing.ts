@@ -1,12 +1,12 @@
 import { updatePairings } from './pairing';
 import { CapabilityError } from '@web-relay/core';
 import { bounded, descriptors, record, request, unwrap, VERSION } from '@web-relay/protocol';
-import type { JsonValue } from '@web-relay/core';
+import type { CapabilityDescriptor, JsonValue } from '@web-relay/core';
 import type { TabContext } from '@web-relay/protocol';
 import { pwaProviders, extensionProviders } from './providers';
 
 export interface PwaScope { origin: string; path: string }
-export interface SavedPwa extends PwaScope { providerId: string; name: string; enabled: boolean }
+export interface SavedPwa extends PwaScope { providerId: string; name: string; enabled: boolean; commands?: CapabilityDescriptor[]; url?: string }
 const KEY = 'pairedPwaProviders', PROPOSAL = 'pwaPairingProposal';
 const reserved = new Set(['browser','tabs',...extensionProviders.map(p=>p.providerId),...pwaProviders.map(p=>p.providerId)]);
 export function pwaScope(value: unknown): PwaScope {
@@ -37,8 +37,12 @@ export function savedPwas(value: unknown): SavedPwa[] {
     }
     const scope = pwaScope(item.origin+item.path);
     if (scope.origin !== item.origin || scope.path !== item.path) throw new CapabilityError('INVALID_SETTINGS','Invalid PWA scope.');
+    if (item.url !== undefined) {
+      const entry = pwaScope(item.url);
+      if (entry.origin !== scope.origin || entry.path !== scope.path) throw new CapabilityError('INVALID_SETTINGS','App entry URL is outside its paired scope.');
+    }
     ids.add(item.providerId);
-    return {...scope,providerId:item.providerId,name:item.name,enabled:item.enabled};
+    return {...scope,providerId:item.providerId,name:item.name,enabled:item.enabled,...(typeof item.url === 'string' ? {url:new URL(item.url).href} : {}),...(item.commands !== undefined ? {commands:descriptors(item.commands,item.providerId,'pwa')} : {})};
   });
 }
 export async function loadSavedPwas() { return savedPwas((await chrome.storage.local.get(KEY))[KEY]); }
@@ -48,17 +52,18 @@ export async function matchingPwas(url: string): Promise<SavedPwa[]> {
     .filter(p=>new URL(url).origin === p.origin);
   return [...defaults,...(await loadSavedPwas()).filter(p=>p.enabled && matchesPwa(p,url))];
 }
-export async function sendPwa(type: 'describe'|'discover'|'execute', context: TabContext, providerId?: string, id?: string, input?: string): Promise<JsonValue> {
+export async function sendPwa(type: 'describe'|'discover'|'execute', context: TabContext, providerId?: string, id?: string, input?: string, documentId?: string): Promise<JsonValue> {
   if (!await chrome.permissions.contains({origins:[hostPattern({origin:new URL(context.url).origin,path:'/'})]})) throw new CapabilityError('PERMISSION_REQUIRED','Site access was revoked. Approve it again in app pairing settings.');
   // Inject on demand: new pairings work on already-open tabs and after navigation.
   // The bridge is idempotent and forwards only requests from this extension.
-  await chrome.scripting.executeScript({target:{tabId:context.tabId,frameIds:[0]},files:['content.js']});
+  const [injected] = await chrome.scripting.executeScript({target:{tabId:context.tabId,frameIds:[0]},files:['content.js']});
+  if (documentId && injected?.documentId !== documentId) throw new CapabilityError('STALE_CONTEXT','The app page changed. Refresh the launcher.');
   const req = {...request(type,id,context,input),...(providerId ? {providerId} : {})};
-  return unwrap(await bounded(chrome.tabs.sendMessage(context.tabId,req,{frameId:0})),req);
+  return unwrap(await bounded(chrome.tabs.sendMessage(context.tabId,req,{documentId:documentId ?? injected!.documentId})),req);
 }
 async function probe(scope: PwaScope) {
   if (!await chrome.permissions.contains({origins:[hostPattern(scope)]})) throw new CapabilityError('PERMISSION_REQUIRED','Approve browser access to this host, then check the connection.');
-  const tabs = (await chrome.tabs.query({})).filter(tab=>tab.id !== undefined && tab.url && matchesPwa(scope,tab.url));
+  const tabs = (await chrome.tabs.query({})).filter(tab=>tab.id !== undefined && tab.incognito === chrome.extension.inIncognitoContext && tab.url && matchesPwa(scope,tab.url));
   if (tabs.length !== 1) throw new CapabilityError('OPEN_APP', 'Open exactly one tab at this app path, then check the connection.');
   const context = {tabId:tabs[0].id!,url:tabs[0].url!};
   let value: JsonValue;
@@ -87,7 +92,7 @@ async function noCollision(providerId: string) {
 export async function checkPwa(url: unknown, owner: string) {
   const scope = pwaScope(url), identity = await probe(scope);
   await noCollision(identity.providerId);
-  const proposal = {...scope,...identity,token:crypto.randomUUID(),owner,expires:Date.now()+300000};
+  const proposal = {...scope,...identity,url:new URL(String(url)).href,token:crypto.randomUUID(),owner,expires:Date.now()+300000};
   await chrome.storage.session.set({[PROPOSAL]:proposal});
   return proposal;
 }
@@ -99,7 +104,11 @@ export function approvePwa(token: unknown, owner: string) {
     const identity = await probe(scope);
     if (identity.providerId !== pending.providerId || identity.name !== pending.name) throw new CapabilityError('IDENTITY_CHANGED','App identity changed. Check its connection again.');
     const saved = await noCollision(identity.providerId);
-    saved.push({...scope,providerId:identity.providerId,name:identity.name,enabled:true});
+    const tabs = (await chrome.tabs.query({})).filter(tab=>tab.id !== undefined && tab.incognito === chrome.extension.inIncognitoContext && tab.url && matchesPwa(scope,tab.url));
+    const tab = tabs.length === 1 ? tabs[0] : undefined;
+    if (!tab?.url || tab.id === undefined) throw new CapabilityError('OPEN_APP','Open the app before approving pairing.');
+    const commands = descriptors(await sendPwa('discover',{tabId:tab.id,url:tab.url},identity.providerId),identity.providerId,'pwa');
+    saved.push({...scope,providerId:identity.providerId,name:identity.name,enabled:true,commands,...(typeof pending.url === 'string' ? {url:pending.url} : {})});
     await chrome.storage.local.set({[KEY]:saved});
     await chrome.storage.session.remove(PROPOSAL);
     return saved;
@@ -113,5 +122,14 @@ export function changePwa(providerId: unknown, enabled?: boolean) {
     const next = enabled === undefined ? saved.filter(p=>p !== selected) : saved.map(p=>p === selected ? {...p,enabled} : p);
     await chrome.storage.local.set({[KEY]:next});
     return next;
+  });
+}
+
+// Catalog updates share the pairing lock so discovery cannot resurrect removed apps.
+export function cachePwaCommands(providerId: string, commands: CapabilityDescriptor[]) {
+  return updatePairings(async()=>{
+    const saved = await loadSavedPwas();
+    if (!saved.some(app=>app.providerId === providerId && app.enabled)) throw new CapabilityError('UNAVAILABLE','This app was disabled or removed.');
+    await chrome.storage.local.set({[KEY]:saved.map(app=>app.providerId === providerId ? {...app,commands} : app)});
   });
 }

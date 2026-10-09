@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { mkdtemp, readFile, writeFile, cp, rm } from 'node:fs/promises';
@@ -30,13 +31,17 @@ window.mount = () => {
 };mount();</script>`;
 let browser;
 const live = process.argv.includes('--live-hub');
+// Extension-created tabs can bypass Playwright's initial navigation interception.
+// Serve the fixture locally so reopened pages use the same SDK and no network account.
+const server = live ? undefined : createServer((_request,response)=>{response.writeHead(200,{'Content-Type':'text/html'});response.end(pageFixture);});
+if (server) await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+const appOrigin = live ? 'https://page-apps.github.io' : `http://127.0.0.1:${server.address().port}`;
 try {
   browser = await chromium.launchPersistentContext(join(fixture,'profile'),{channel:'chromium',headless:true,
     ...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{}),
-    args:[`--disable-extensions-except=${launcherPath}`,`--load-extension=${launcherPath}`,'--no-sandbox','--no-proxy-server']});
-  if (!live) await browser.route('https://page-apps.github.io/**',route=>route.fulfill({contentType:'text/html',body:pageFixture}));
-  else await browser.route('https://page-apps.github.io/quick-log/**',route=>route.fulfill({contentType:'text/html',body:'<title>Navigation fixture: no account writes</title>'}));
-  const hub = await browser.newPage();await hub.goto('https://page-apps.github.io/');
+    args:[`--disable-extensions-except=${launcherPath}`,`--load-extension=${launcherPath}`,'--enable-unsafe-extension-debugging','--no-sandbox','--no-proxy-server']});
+  if (live) await browser.route('https://page-apps.github.io/quick-log/**',route=>route.fulfill({contentType:'text/html',body:'<title>Navigation fixture: no account writes</title>'}));
+  const hub = await browser.newPage();await hub.goto(appOrigin+'/');
   if(live)await hub.getByRole('button',{name:/Use (light|dark) theme/}).waitFor();
   const settings=await browser.newPage();await settings.goto(`chrome-extension://${launcherId}/options.html`);
   await settings.getByText('Ready to pair an extension.',{exact:true}).waitFor();
@@ -66,7 +71,7 @@ try {
   const command=list.capabilities.find(c=>c.id==='personal-hub.toggle-theme');assert.ok(command);
   const execute=command=>api(popup,{type:'execute',command,context:list.context});
   assert.equal((await execute(command)).ok,true);
-  console.log('PASS actual launcher discovery and invocation on GitHub Pages origin'+(live?' (deployed hub)':' (fixture)'));
+  console.log('PASS actual launcher discovery and invocation'+(live?' on GitHub Pages (deployed hub)':' on local fixture'));
   if(live){
     const manage=list.capabilities.find(c=>c.id==='personal-hub.manage-credentials');
     assert.equal((await execute(manage)).ok,true);
@@ -75,7 +80,7 @@ try {
     await hub.getByRole('button',{name:'Cancel',exact:true}).click();
     const navigation=list.capabilities.find(c=>c.id==='personal-hub.open.quick-log');
     const result=await execute(navigation);
-    await hub.waitForURL('https://page-apps.github.io/quick-log/');
+    await hub.waitForURL(appOrigin+'/quick-log/');
     console.log('Deployed navigation response:',JSON.stringify(result));
     assert.equal(result.ok,true);
     console.log('PASS deployed hub dialog availability and actual extension navigation; no credentials entered');
@@ -98,7 +103,7 @@ try {
       other.registry.register({id:'other.action',title:'Other',run:()=>null});
     });
     assert.equal((await api(popup,{type:'list'})).data.capabilities.some(c=>c.id==='personal-hub.toggle-theme'),true);
-    const child=await browser.newPage();await child.goto('https://page-apps.github.io/quick-log/');
+    const child=await browser.newPage();await child.goto(appOrigin+'/quick-log/');
     await settings.locator('#pwa-url').fill(child.url());
     await settings.getByRole('button',{name:'Check app connection',exact:true}).click();
     await settings.getByRole('heading',{name:'Review app pairing'}).waitFor();
@@ -107,17 +112,59 @@ try {
     await child.bringToFront();
     const childList=(await api(popup,{type:'list'})).data;
     assert.ok(childList.capabilities.some(c=>c.id==='quick-log.toggle-theme'));
-    assert.equal(childList.capabilities.some(c=>c.providerId==='personal-hub'),false);
+    assert.equal(childList.capabilities.some(c=>c.providerId==='personal-hub'),true);
     await hub.bringToFront();list=(await api(popup,{type:'list'})).data;
-    await child.goto('https://page-apps.github.io/unpaired/');await child.bringToFront();
+    await child.goto(appOrigin+'/unpaired/');await child.bringToFront();
     assert.equal((await execute(command)).error.code,'STALE_CONTEXT');
-    assert.equal((await api(popup,{type:'list'})).data.capabilities.some(c=>c.providerKind==='pwa'),false);
+    assert.equal((await api(popup,{type:'list'})).data.capabilities.some(c=>c.id==='personal-hub.toggle-theme'),true);
     await hub.bringToFront();
+    // Registered apps discover and execute from an unrelated tab, using app-owned state.
+    await browser.route('https://example.com/**',route=>route.fulfill({contentType:'text/html',body:'<title>Unrelated caller</title>'}));
+    const unrelated=await browser.newPage();await unrelated.goto('https://example.com/');await unrelated.bringToFront();
+    list=(await api(popup,{type:'list'})).data;
+    assert.ok(list.capabilities.some(c=>c.id===command.id));
+    const before=await hub.evaluate(()=>window.calls);
+    assert.equal((await execute(command)).ok,true);
+    assert.equal(await hub.evaluate(()=>window.calls),before+1);
+    assert.equal(await unrelated.evaluate(()=>window.calls),undefined);
+    assert.equal(list.context.url,unrelated.url());
+    const cdp=await browser.browser().newBrowserCDPSession();
+    const {targetInfos}=await cdp.send('Target.getTargets',{filter:[{type:'tab'},{exclude:true}]});
+    await cdp.send('Extensions.triggerAction',{id:launcherId,targetId:targetInfos.find(target=>target.url===unrelated.url()).targetId});
+    const ui=unrelated.locator('web-relay-launcher');
+    await ui.getByRole('button',{name:'Switch theme personal-hub',exact:true}).click();
+    await ui.locator('#status').filter({hasText:'Action delivered.'}).waitFor();
+    assert.equal(await hub.evaluate(()=>window.calls),before+2);
+    await ui.locator('#search').press('Escape');
+    // Old pairings without a catalog hydrate from their owning tab, without re-pairing.
+    const catalogWorker=browser.serviceWorkers().find(w=>w.url().startsWith(`chrome-extension://${launcherId}/`));
+    await catalogWorker.evaluate(async()=>{
+      const {pairedPwaProviders:apps}=await chrome.storage.local.get('pairedPwaProviders');
+      await chrome.storage.local.set({pairedPwaProviders:apps.map(({commands,...app})=>app)});
+    });
+    assert.ok((await api(popup,{type:'list'})).data.capabilities.some(c=>c.id===command.id));
+    // Do not choose an arbitrary owning tab when duplicate app pages are open.
+    const duplicate=await browser.newPage();await duplicate.goto(appOrigin+'/');await unrelated.bringToFront();
+    assert.equal((await execute(command)).error.code,'AMBIGUOUS_PAGE');
+    await duplicate.close();
+    // Closing the page retains metadata; listing never creates tabs. Execution reopens it.
+    await hub.close();await unrelated.bringToFront();
+    const count=browser.pages().length;
+    list=(await api(popup,{type:'list'})).data;
+    assert.ok(list.capabilities.some(c=>c.id===command.id));
+    assert.equal(browser.pages().length,count);
+    assert.ok(list.sources.some(source=>source.name==='Personal Hub' && source.status==='registered'));
+    const reopenResult=await execute(command);
+    assert.equal(reopenResult.ok,true,JSON.stringify(reopenResult));
+    const reopened=browser.pages().find(page=>page.url()===appOrigin+'/');
+    assert.ok(reopened);assert.equal(await reopened.evaluate(()=>window.calls),1);
+    assert.equal((await api(popup,{type:'list'})).data.context.tabId,list.context.tabId);
+    console.log('PASS cross-tab routing, catalog migration, duplicate rejection, closed-app visibility and background reopening');
     const permissionWorker=browser.serviceWorkers().find(w=>w.url().startsWith(`chrome-extension://${launcherId}/`));
     await permissionWorker.evaluate(()=>{globalThis.realContains=chrome.permissions.contains;chrome.permissions.contains=async()=>false;});
     assert.equal((await api(popup,{type:'list'})).data.capabilities.some(c=>c.providerKind==='pwa'),false);
     await permissionWorker.evaluate(()=>{chrome.permissions.contains=globalThis.realContains;});
-    const original = await api(settings,{type:'pwa-check',url:'https://page-apps.github.io/unpaired/'});
+    const original = await api(settings,{type:'pwa-check',url:appOrigin+'/unpaired/'});
     assert.equal(original.ok,true);
     const otherSettings=await browser.newPage();await otherSettings.goto(`chrome-extension://${launcherId}/options.html`);
     assert.equal((await api(otherSettings,{type:'pwa-approve',token:original.data.token})).error.code,'APPROVAL_REQUIRED');
@@ -126,7 +173,7 @@ try {
     assert.equal((await api(settings,{type:'pwa-approve',token:original.data.token})).error.code,'APPROVAL_REQUIRED');
     await otherSettings.close();
     await settings.getByRole('button',{name:'Remove app Personal Hub',exact:true}).click();
-    await hub.bringToFront();assert.equal((await execute(command)).error.code,'UNAVAILABLE');
+    await unrelated.bringToFront();assert.equal((await execute(command)).error.code,'UNAVAILABLE');
     console.log('PASS explicit approval, path isolation, provider addressing, errors, stale context, disposal/remount and disable/remove');
   }
-}finally{await browser?.close();await rm(fixture,{recursive:true,force:true});}
+}finally{await browser?.close();if(server)await new Promise(resolve=>server.close(resolve));await rm(fixture,{recursive:true,force:true});}

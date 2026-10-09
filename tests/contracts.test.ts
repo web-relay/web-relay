@@ -132,6 +132,9 @@ test('PWA scopes separate the hub from sibling apps and retain exact-origin chec
   assert.equal(hostPattern(pwaScope('http://localhost:5173/')),'http://localhost/*');
   const saved = {...hub,providerId:'personal-hub',name:'Personal Hub',enabled:true};
   assert.deepEqual(savedPwas([saved]),[saved]);
+  const commands = [{id:'personal-hub.action',title:'Action',providerId:'personal-hub',providerKind:'pwa'}];
+  assert.deepEqual(savedPwas([{...saved,commands}])[0]?.commands,commands);
+  assert.throws(()=>savedPwas([{...saved,commands:[{...commands[0],providerId:'other'}]}]));
   for (const value of [[saved,saved],[{...saved,providerId:'browser'}],[{...saved,path:'/quick-log'}]]) assert.throws(()=>savedPwas(value));
   assert.equal(isRequest({...request('discover'),providerId:'personal-hub'}),true);
   assert.equal(isRequest({...request('discover'),providerId:'INVALID'}),false);
@@ -195,4 +198,22 @@ test('saved WebMCP sites validate exact URLs, isolated identities, and bounded m
   for (const value of [[site,site],[{...site,id:'browser'}],[{...site,url:'https://example.com'}],[{...site,tools:[tool,tool]}],[{...site,tools:[{...tool,inputSchema:'{}'}]}],[{...site,enabled:'yes'}]]) assert.throws(()=>savedWebMcpSites(value));
   assert.equal(schemaKey({type:'object',properties:{x:{type:'number'}}}),schemaKey({properties:{x:{type:'number'}},type:'object'}));
   assert.notEqual(schemaKey({required:['x','y']}),schemaKey({required:['y','x']}));
+});
+
+test('WebMCP forms expose only root required scalar fields and reject nested requirements', async()=>{
+  const {requiredFields}=await import('../apps/launcher-extension/src/webmcp-form');
+  const schema={type:'object',required:['query','count','published','language'],properties:{query:{type:'string',title:'Search',minLength:2},count:{type:'integer',minimum:1,maximum:8,default:5},published:{type:'boolean',default:false},language:{type:'string',enum:['en','zh-hant']},optionalNested:{type:'object',properties:{x:{type:'string'}}}}};
+  const plan=requiredFields(schema);
+  assert.equal(plan.error,undefined);
+  assert.deepEqual(plan.fields.map(field=>field.name),schema.required);
+  assert.equal(plan.fields[0]!.label,'Search');
+  assert.equal(plan.fields[1]!.default,5);
+  assert.equal(plan.fields[2]!.default,false);
+  for(const property of [{type:'object',properties:{}},{type:'array',items:{type:'string'}},{$ref:'#/$defs/input'},{type:['string','null']},{type:'string',oneOf:[{const:'a'}]}]) {
+    assert.match(requiredFields({type:'object',required:['input'],properties:{input:property}}).error!,/unsupported/);
+  }
+  assert.ok(requiredFields({type:'object',required:['missing'],properties:{}}).error);
+  assert.ok(requiredFields({...schema,oneOf:[]}).error);
+  assert.deepEqual(requiredFields({type:'object',properties:schema.properties}).fields,[]);
+  assert.equal(requiredFields({type:'object',required:['query'],properties:{query:{type:'string',enum:['en',1]}}}).fields.length,0);
 });

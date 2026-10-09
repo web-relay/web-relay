@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Web Relay Launcher",
-  "version": "0.0.3",
-  "description": "Discover browser and PWA actions, and explicitly pair extension providers.",
+  "version": "0.0.5",
+  "description": "Discover browser actions, pair providers, and register WebMCP sites with required-field forms.",
   "background": {
     "service_worker": "background.js",
     "type": "module"

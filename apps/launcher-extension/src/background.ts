@@ -5,6 +5,7 @@ import type { TabContext } from '@web-relay/protocol';
 import { savedWebMcpSources, executeSavedWebMcp, loadWebMcpSites, checkWebMcpSite, approveWebMcpSite, changeWebMcpSite, refreshWebMcpSite } from './webmcp-sites';
 import { discoverWebMcp, executeWebMcp } from './webmcp';
 import type { LauncherCommand, Snapshot } from './model';
+import { savedPwaSources, executeSavedPwa } from './pwa-sources';
 import { matchingPwas, sendPwa, loadSavedPwas, checkPwa, approvePwa, changePwa } from './pwa-pairing';
 import type { ExtensionProvider } from './providers';
 import { allExtensionProviders, loadSavedProviders, checkPairing, approvePairing, changePairing } from './pairing';
@@ -63,14 +64,16 @@ async function discover(sourceContext?: TabContext): Promise<Snapshot> {
   const context = sourceContext ?? await activeContext();
   const capabilities: LauncherCommand[] = [];
   const sources: Snapshot['sources'] = [{ name: 'Browser', status: 'connected', detail: 'Built-in actions' }];
-  const pwas = context ? await matchingPwas(context.url) : [];
+  const paired = await loadSavedPwas();
+  const pwas = context ? (await matchingPwas(context.url)).filter(p=>!paired.some(app=>app.providerId === p.providerId)) : [];
+  for (const saved of await savedPwaSources(context)) { capabilities.push(...saved.commands); sources.push(saved.source); }
   for (const pwa of pwas) {
     try {
       capabilities.push(...descriptors(await sendPwa('discover', context!, pwa.providerId), pwa.providerId, 'pwa'));
       sources.push({name:pwa.name,status:'connected',detail:`Paired app · ${pwa.origin}${pwa.path}`});
     } catch (error) { sources.push({name:pwa.name,status:'unavailable',detail:error instanceof Error ? error.message : 'Not connected'}); }
   }
-  if (!pwas.length) sources.push({name:'Web apps',status:'unavailable',detail:'Pair an app in launcher settings, then open its path'});
+  if (!pwas.length && !paired.length) sources.push({name:'Web apps',status:'unavailable',detail:'Pair an app in launcher settings, then open its path'});
   const settings = await chrome.storage.local.get(null);
   if (settings.webmcpEnabled === true && context) {
     try {
@@ -100,6 +103,9 @@ async function execute(command: LauncherCommand, context?: TabContext, input?: s
   if (context) await validateContext(context);
   if (command.providerKind === 'webmcp' && command.siteId !== undefined) {
     return executeSavedWebMcp(command,input,async()=>{if (context) await validateContext(context);});
+  }
+  if (command.providerKind === 'pwa' && (await loadSavedPwas()).some(app=>app.providerId === command.providerId)) {
+    return executeSavedPwa(command,context,input,async()=>{if (context) await validateContext(context);});
   }
   const fresh = await discover();
   const available = fresh.capabilities.some(item => item.id === command.id && item.providerId === command.providerId && item.providerKind === command.providerKind);

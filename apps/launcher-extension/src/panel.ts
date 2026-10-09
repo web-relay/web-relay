@@ -1,3 +1,4 @@
+import { mountRequiredForm } from './webmcp-form';
 import type { LauncherCommand } from './model';
 import { bounded, record } from '@web-relay/protocol';
 import type { Snapshot } from './model';
@@ -57,6 +58,7 @@ async function refresh() {
   finally { busy = false; render(); }
 }
 let inputCommand: LauncherCommand | undefined;
+let toolForm: ReturnType<typeof mountRequiredForm> | undefined;
 async function copy(text: string) {
   // Clipboard permission is extension-scoped; execCommand covers non-secure HTTP pages.
   try { if (navigator.clipboard) { await navigator.clipboard.writeText(text); return; } } catch {}
@@ -73,17 +75,19 @@ function showQuestion(command: LauncherCommand) {
   element('#search').hidden = true;
   element('#question-title').textContent = command.title;
   const json = command.providerKind === 'webmcp';
-  element('#question-label').textContent = json ? 'JSON arguments' : 'Question';
-  element('#question-hint').textContent = json ? command.description || 'Review the tool and its arguments before running.' : 'Send this text to the selected capability.';
-  element('#tool-schema').hidden = !json;
-  element('#tool-schema').textContent = json ? JSON.stringify(command.inputSchema, null, 2) : '';
-  element<HTMLTextAreaElement>('#question').placeholder = json ? '{}' : 'What would you like to ask?';
-  element<HTMLTextAreaElement>('#question').value = json ? '{}' : '';
-  element('#question').focus();
-  status.textContent = json ? 'Review JSON arguments, then run the tool.' : 'Enter the text to send to this capability.';
+  element('#question-label').hidden = json;
+  element<HTMLTextAreaElement>('#question').hidden = json;
+  element<HTMLTextAreaElement>('#question').required = !json;
+  element('#tool-fields').hidden = !json;
+  element('#question-hint').textContent = json ? command.description || 'Review the inputs before running.' : 'Send this text to the selected capability.';
+  toolForm = json ? mountRequiredForm(element('#tool-fields'),command.inputSchema) : undefined;
+  element<HTMLButtonElement>('#question-send').disabled = !!toolForm?.error;
+  element<HTMLTextAreaElement>('#question').value = '';
+  if (json) toolForm?.focus(); else element('#question').focus();
+  status.textContent = toolForm?.error ?? (json ? 'Enter the required inputs, then run the tool.' : 'Enter the text to send to this capability.');
 }
 function cancelQuestion() {
-  inputCommand = undefined;
+  inputCommand = undefined; toolForm = undefined;
   element('#question-form').hidden = true;
   element('#commands').hidden = false;
   element('#search').hidden = false;
@@ -91,7 +95,10 @@ function cancelQuestion() {
 }
 element('#question-form').addEventListener('submit', event => { event.preventDefault(); });
 element('#question-send').addEventListener('click', event => {
-  if (event.isTrusted && inputCommand) void run(inputCommand, element<HTMLTextAreaElement>('#question').value);
+  if (!event.isTrusted || !inputCommand) return;
+  const input = inputCommand.providerKind === 'webmcp' ? toolForm?.serialize() : element<HTMLTextAreaElement>('#question').value;
+  if (input === undefined) {status.textContent = toolForm?.error ?? 'Complete the required inputs before running.';return;}
+  void run(inputCommand,input);
 });
 element('#question-cancel').addEventListener('click', cancelQuestion);
 async function run(command: LauncherCommand, input?: string) {
