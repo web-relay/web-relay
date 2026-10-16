@@ -106,7 +106,7 @@ Coding agents can use `packages/sdk/skills/web-relay-integration/SKILL.md`, also
 
 ### Dev Tunnel provider
 
-The workspace’s [Dev Tunnel extension](https://github.com/web-relay/web-relay-workspace/tree/main/ssh-dev-extension) is preconfigured in `apps/launcher-extension/src/providers.ts` with the fixed ID `kdmgihcbblbplehcahcmcbombjkknhom`. It receives no current-tab context. Load and reload both extensions; manual pairing is unnecessary. Capability sources includes an enable/disable control and shows discovery failures inline. Old Dev Tunnel pairings migrate to this bundled route while preserving a disabled preference; other providers still require explicit settings approval. See the [extension guide](https://web-relay.github.io/guides/extensions/).
+The workspace’s [Dev Tunnel extension](https://github.com/web-relay/ssh-dev-extension) is preconfigured in `apps/launcher-extension/src/providers.ts` with the fixed ID `kdmgihcbblbplehcahcmcbombjkknhom`. It receives no current-tab context. Load and reload both extensions; manual pairing is unnecessary. Capability sources includes an enable/disable control and shows discovery failures inline. Old Dev Tunnel pairings migrate to this bundled route while preserving a disabled preference; other providers still require explicit settings approval. See the [extension guide](https://web-relay.github.io/guides/extensions/).
 
 ### Workspace identity convention
 
