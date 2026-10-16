@@ -74,6 +74,7 @@ async function discover(sourceContext?: TabContext): Promise<Snapshot> {
     } catch (error) { sources.push({name:pwa.name,status:'unavailable',detail:error instanceof Error ? error.message : 'Not connected'}); }
   }
   if (!pwas.length && !paired.length) sources.push({name:'Web apps',status:'unavailable',detail:'Pair an app in launcher settings, then open its path'});
+  const providers = await allExtensionProviders();
   const settings = await chrome.storage.local.get(null);
   if (settings.webmcpEnabled === true && context) {
     try {
@@ -83,14 +84,14 @@ async function discover(sourceContext?: TabContext): Promise<Snapshot> {
     } catch (error) { sources.push({name:'WebMCP',status:'unavailable',detail:error instanceof Error ? error.message : 'Discovery failed'}); }
   } else sources.push({name:'WebMCP',status:'disabled',detail:'Enable preview tools below; access is limited to the current page'});
   for (const saved of await savedWebMcpSources()) { capabilities.push(...saved.commands); sources.push(saved.source); }
-  const discovered = await Promise.all((await allExtensionProviders()).map(async provider => {
+  const discovered = await Promise.all(providers.map(async provider => {
     if (provider.enabled === false || (provider.enabledSetting && settings[provider.enabledSetting] === false)) {
       return { commands:[] as CapabilityDescriptor[], source:{ name:provider.name, status:'disabled' as const, detail:'Disabled in this launcher' } };
     }
     try {
       return { commands:descriptors(await callExtension(provider, 'discover', context),provider.providerId,'extension'), source:{ name:provider.name,status:'connected' as const,detail:'Paired extension provider' } };
     } catch (error) {
-      return { commands:[] as CapabilityDescriptor[], source:{ name:provider.name,status:'unavailable' as const,detail:'Load the paired extension. ' + (error instanceof Error ? error.message : '') } };
+      return { commands:[] as CapabilityDescriptor[], source:{ name:provider.name,status:'unavailable' as const,detail:(error instanceof Error ? error.message + ' ' : '') + `Check extension ${provider.extensionId} is loaded and allows this launcher. Reload both extensions; remove stale manual pairings if the provider ID changed.` } };
     }
   }));
   for (const {commands,source} of discovered) { capabilities.push(...commands); sources.push(source); }
@@ -180,6 +181,9 @@ chrome.runtime.onMessage.addListener((value: unknown, sender, sendResponse) => {
     }
     if (value.type === 'configure-webmcp' && typeof value.enabled === 'boolean') {
       await chrome.storage.local.set({webmcpEnabled:value.enabled}); return discover(sourceContext);
+    }
+    if (value.type === 'configure' && typeof value.devTunnelEnabled === 'boolean') {
+      await chrome.storage.local.set({ devTunnelEnabled:value.devTunnelEnabled }); return discover(sourceContext);
     }
     if (value.type === 'configure' && typeof value.githubEnabled === 'boolean') {
       await chrome.storage.local.set({ githubEnabled: value.githubEnabled }); return discover(sourceContext);

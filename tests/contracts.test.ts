@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CapabilityError, Registry } from '../packages/core/src/index';
 import { bounded, descriptors, failure, isPwaOrigin, isRequest, request, success, unwrap } from '../packages/protocol/src/index';
-import { savedProviders } from '../apps/launcher-extension/src/pairing';
+import { savedProviders, migrateDevTunnelPairing } from '../apps/launcher-extension/src/pairing';
 import { githubRegistry, repositoryUrl } from '../apps/webapp-extension/src/github';
 
 test('availability is rechecked at execution; unregister removes a command', async () => {
@@ -216,4 +216,13 @@ test('WebMCP forms expose only root required scalar fields and reject nested req
   assert.ok(requiredFields({...schema,oneOf:[]}).error);
   assert.deepEqual(requiredFields({type:'object',properties:schema.properties}).fields,[]);
   assert.equal(requiredFields({type:'object',required:['query'],properties:{query:{type:'string',enum:['en',1]}}}).fields.length,0);
+});
+
+
+test('bundled Dev Tunnel replaces legacy pairings and preserves disabled preferences', () => {
+  const legacy = {providerId:'dev-tunnel',name:'Dev Tunnel',extensionId:'a'.repeat(32),enabled:false,shareTabContext:true};
+  const other = {...legacy,providerId:'workspaces',extensionId:'b'.repeat(32)};
+  assert.deepEqual(migrateDevTunnelPairing({pairedExtensionProviders:[legacy,other]}),{pairedExtensionProviders:[other],devTunnelEnabled:false});
+  assert.deepEqual(migrateDevTunnelPairing({pairedExtensionProviders:[legacy],devTunnelEnabled:true}),{pairedExtensionProviders:[],devTunnelEnabled:true});
+  assert.equal(migrateDevTunnelPairing({pairedExtensionProviders:[other]}),undefined);
 });

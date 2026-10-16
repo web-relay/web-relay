@@ -34,7 +34,29 @@ export function savedProviders(value: unknown): SavedProvider[] {
     return {providerId:item.providerId,name:item.name,extensionId:item.extensionId,enabled:item.enabled,shareTabContext:item.shareTabContext};
   });
 }
+// Older Dev Tunnel pairings may use a path-derived ID or share tab context.
+// The bundled provider replaces their route; keep an existing disabled preference.
+let migration: Promise<void> | undefined;
+export function migrateDevTunnelPairing(settings: Record<string, unknown>): Record<string, unknown> | undefined {
+  const raw = settings[KEY];
+  if (!Array.isArray(raw)) return;
+  const legacy = raw.filter(item => record(item) && item.providerId === 'dev-tunnel'
+    && label(item.name) && typeof item.extensionId === 'string' && extensionIdPattern.test(item.extensionId)
+    && typeof item.enabled === 'boolean' && typeof item.shareTabContext === 'boolean');
+  if (!legacy.length) return;
+  const remaining = raw.filter(item => !legacy.includes(item));
+  savedProviders(remaining);
+  return {[KEY]:remaining,devTunnelEnabled:typeof settings.devTunnelEnabled === 'boolean'
+    ? settings.devTunnelEnabled : legacy.every(item=>item.enabled)};
+}
+function ensureMigration() {
+  return migration ??= updatePairings(async () => {
+    const update = migrateDevTunnelPairing(await chrome.storage.local.get([KEY,'devTunnelEnabled']));
+    if (update) await chrome.storage.local.set(update);
+  });
+}
 export async function loadSavedProviders(): Promise<SavedProvider[]> {
+  await ensureMigration();
   return savedProviders((await chrome.storage.local.get(KEY))[KEY]);
 }
 export async function allExtensionProviders(): Promise<ExtensionProvider[]> {
@@ -97,7 +119,8 @@ export async function checkPairing(extensionId: unknown, owner: string) {
   await chrome.storage.session.set({[PROPOSAL]:proposal});
   return {providerId:info.providerId,name:info.name,protocolVersion:info.protocolVersion,extensionId,token:proposal.token};
 }
-export function approvePairing(token: unknown, shareTabContext: unknown, owner: string) {
+export async function approvePairing(token: unknown, shareTabContext: unknown, owner: string) {
+  await ensureMigration();
   return updatePairings(async () => {
     const pending = (await chrome.storage.session.get(PROPOSAL))[PROPOSAL];
     if (!record(pending) || typeof token !== 'string' || pending.token !== token || pending.owner !== owner
@@ -117,7 +140,8 @@ export function approvePairing(token: unknown, shareTabContext: unknown, owner: 
     return providers;
   });
 }
-export function changePairing(extensionId: unknown, enabled?: boolean) {
+export async function changePairing(extensionId: unknown, enabled?: boolean) {
+  await ensureMigration();
   return updatePairings(async () => {
     checkExtensionId(extensionId);
     const providers = await loadSavedProviders();

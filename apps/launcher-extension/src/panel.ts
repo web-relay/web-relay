@@ -43,9 +43,12 @@ function apply(value: unknown) {
   const sources = element('#sources'); sources.replaceChildren();
   for (const source of snapshot.sources) {
     const row = document.createElement('p'); row.className = `source ${source.status}`;
-    row.textContent = `${source.name} · ${source.status}`; row.title = source.detail; sources.append(row);
+    row.textContent = `${source.name} · ${source.status}`; row.title = source.detail;
+    if (source.status === 'unavailable') { const detail = document.createElement('small'); detail.style.display = 'block'; detail.textContent = source.detail; row.append(detail); }
+    sources.append(row);
   }
   element('#context').textContent = snapshot.context ? new URL(snapshot.context.url).hostname || snapshot.context.url : 'No active page context';
+  element<HTMLInputElement>('#dev-tunnel-enabled').checked = !snapshot.sources.some(source => source.name === 'Dev Tunnel' && source.status === 'disabled');
   element<HTMLInputElement>('#github-enabled').checked = !snapshot.sources.some(source => source.name === 'GitHub provider' && source.status === 'disabled');
   element<HTMLInputElement>('#webmcp-enabled').checked = !snapshot.sources.some(source => source.name === 'WebMCP' && source.status === 'disabled');
   render();
@@ -152,6 +155,14 @@ element<HTMLInputElement>('#github-enabled').addEventListener('click', async eve
   if (busy) { element<HTMLInputElement>('#github-enabled').checked = !element<HTMLInputElement>('#github-enabled').checked; return; }
   busy = true; render();
   try { apply(await panel({ type: 'configure', githubEnabled: (event.target as HTMLInputElement).checked })); status.textContent = 'Provider preference saved.'; }
+  catch (error) { report(error); }
+  finally { busy = false; render(); }
+});
+element<HTMLInputElement>('#dev-tunnel-enabled').addEventListener('click', async event => {
+  if (!event.isTrusted) return;
+  if (busy) { element<HTMLInputElement>('#dev-tunnel-enabled').checked = !element<HTMLInputElement>('#dev-tunnel-enabled').checked; return; }
+  busy = true; render();
+  try { apply(await panel({type:'configure',devTunnelEnabled:(event.target as HTMLInputElement).checked})); status.textContent = 'Provider preference saved.'; }
   catch (error) { report(error); }
   finally { busy = false; render(); }
 });
