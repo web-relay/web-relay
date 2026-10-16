@@ -107,3 +107,7 @@ Coding agents can use `packages/sdk/skills/web-relay-integration/SKILL.md`, also
 ### Dev Tunnel provider
 
 The workspace’s [Dev Tunnel extension](https://github.com/web-relay/web-relay-workspace/tree/main/ssh-dev-extension) is preconfigured in `apps/launcher-extension/src/providers.ts` with the fixed ID `kdmgihcbblbplehcahcmcbombjkknhom`. It receives no current-tab context. Load and reload both extensions; manual pairing is unnecessary. Capability sources includes an enable/disable control and shows discovery failures inline. Old Dev Tunnel pairings migrate to this bundled route while preserving a disabled preference; other providers still require explicit settings approval. See the [extension guide](https://web-relay.github.io/guides/extensions/).
+
+### Workspace identity convention
+
+All four workspace extensions have permanent manifest keys, and the launcher preconfigures GitHub, LLM and Dev Tunnel. All three providers can be enabled or disabled in Capability sources. GitHub receives context only on GitHub, LLM receives the active page URL for page-link prompts, and Dev Tunnel receives none. Outside providers still require explicit pairing. The workspace [identity inventory and maintenance guide](https://github.com/web-relay/web-relay-workspace/blob/main/EXTENSION_IDENTITIES.md) documents all IDs, update/migration steps and the CI check for source/built manifests, routing, caller allowlists and native-host identity. Fixed IDs do not replace local native messaging registration.

@@ -182,11 +182,11 @@ chrome.runtime.onMessage.addListener((value: unknown, sender, sendResponse) => {
     if (value.type === 'configure-webmcp' && typeof value.enabled === 'boolean') {
       await chrome.storage.local.set({webmcpEnabled:value.enabled}); return discover(sourceContext);
     }
-    if (value.type === 'configure' && typeof value.devTunnelEnabled === 'boolean') {
-      await chrome.storage.local.set({ devTunnelEnabled:value.devTunnelEnabled }); return discover(sourceContext);
-    }
-    if (value.type === 'configure' && typeof value.githubEnabled === 'boolean') {
-      await chrome.storage.local.set({ githubEnabled: value.githubEnabled }); return discover(sourceContext);
+    if (value.type === 'configure') {
+      const preferences = Object.fromEntries(['githubEnabled','llmEnabled','devTunnelEnabled']
+        .filter(key=>typeof value[key] === 'boolean').map(key=>[key,value[key]]));
+      if (!Object.keys(preferences).length) throw new CapabilityError('INVALID_REQUEST','Choose a provider preference.');
+      await chrome.storage.local.set(preferences); return discover(sourceContext);
     }
     if (value.type === 'execute' && (value.context === undefined || isContext(value.context)) && record(value.command)) {
       const command = value.command;

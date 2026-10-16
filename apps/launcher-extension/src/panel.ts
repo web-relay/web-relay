@@ -48,6 +48,7 @@ function apply(value: unknown) {
     sources.append(row);
   }
   element('#context').textContent = snapshot.context ? new URL(snapshot.context.url).hostname || snapshot.context.url : 'No active page context';
+  element<HTMLInputElement>('#llm-enabled').checked = !snapshot.sources.some(source => source.name === 'LLM provider' && source.status === 'disabled');
   element<HTMLInputElement>('#dev-tunnel-enabled').checked = !snapshot.sources.some(source => source.name === 'Dev Tunnel' && source.status === 'disabled');
   element<HTMLInputElement>('#github-enabled').checked = !snapshot.sources.some(source => source.name === 'GitHub provider' && source.status === 'disabled');
   element<HTMLInputElement>('#webmcp-enabled').checked = !snapshot.sources.some(source => source.name === 'WebMCP' && source.status === 'disabled');
@@ -150,21 +151,16 @@ element('#provider-settings').addEventListener('click', async event => {
   try { await panel({type:'open-settings'}); close(); } catch (error) { report(error); }
 });
 element('#refresh').addEventListener('click', () => { void refresh(); });
-element<HTMLInputElement>('#github-enabled').addEventListener('click', async event => {
-  if (!event.isTrusted) return;
-  if (busy) { element<HTMLInputElement>('#github-enabled').checked = !element<HTMLInputElement>('#github-enabled').checked; return; }
-  busy = true; render();
-  try { apply(await panel({ type: 'configure', githubEnabled: (event.target as HTMLInputElement).checked })); status.textContent = 'Provider preference saved.'; }
-  catch (error) { report(error); }
-  finally { busy = false; render(); }
-});
-element<HTMLInputElement>('#dev-tunnel-enabled').addEventListener('click', async event => {
-  if (!event.isTrusted) return;
-  if (busy) { element<HTMLInputElement>('#dev-tunnel-enabled').checked = !element<HTMLInputElement>('#dev-tunnel-enabled').checked; return; }
-  busy = true; render();
-  try { apply(await panel({type:'configure',devTunnelEnabled:(event.target as HTMLInputElement).checked})); status.textContent = 'Provider preference saved.'; }
-  catch (error) { report(error); }
-  finally { busy = false; render(); }
-});
+for (const [id,setting] of [['github-enabled','githubEnabled'],['llm-enabled','llmEnabled'],['dev-tunnel-enabled','devTunnelEnabled']] as const) {
+  element<HTMLInputElement>(`#${id}`).addEventListener('click', async event => {
+    if (!event.isTrusted) return;
+    const checkbox = event.target as HTMLInputElement;
+    if (busy) { checkbox.checked = !checkbox.checked; return; }
+    busy = true; render();
+    try { apply(await panel({type:'configure',[setting]:checkbox.checked})); status.textContent = 'Provider preference saved.'; }
+    catch (error) { report(error); }
+    finally { busy = false; render(); }
+  });
+}
 void refresh(); search.focus();
 }

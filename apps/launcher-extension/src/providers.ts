@@ -12,7 +12,7 @@ export interface ExtensionProvider {
 export const extensionProviders: ExtensionProvider[] = [
   { providerId:'github', name:'GitHub provider', extensionId:GITHUB_PROVIDER_ID, contextOrigins:['https://github.com'], enabledSetting:'githubEnabled' },
   { providerId:'dev-tunnel', name:'Dev Tunnel', extensionId:'kdmgihcbblbplehcahcmcbombjkknhom', contextOrigins:[], enabledSetting:'devTunnelEnabled' },
-  { providerId:'llm', name:'LLM provider', extensionId:LLM_PROVIDER_ID },
+  { providerId:'llm', name:'LLM provider', extensionId:LLM_PROVIDER_ID, enabledSetting:'llmEnabled' },
 ];
 export const pwaProviders = [
   { providerId:'demo-notes', name:'Notes PWA', origins:['http://localhost:4173','http://127.0.0.1:4173'] },
